@@ -131,3 +131,64 @@ def search_foreign(query: str, rows: int = 100) -> list:
             detail="해외 검색 설정값(KIPRIS_API_KEY, KIPRIS_FOREIGN_API_URL)이 비어 있습니다.",
         )
     return _search(config.KIPRIS_FOREIGN_API_URL, query, rows, "해외")
+
+
+# ---------------------------------------------------------------------------
+# 청구항 상세 조회 (보조 기능 — 실패해도 검토 흐름은 계속 진행한다)
+# ---------------------------------------------------------------------------
+_CLAIM_TEXT_TAGS = ["claimTextKor", "claimText", "claim", "claimScope"]
+_claims_cache = {}
+
+
+def claims_lookup_configured() -> bool:
+    return bool(config.KIPRIS_API_KEY and config.KIPRIS_KR_DETAIL_API_URL)
+
+
+def fetch_claims(app_number: str) -> str:
+    """출원번호로 청구항 원문을 조회한다. 실패 시 빈 문자열을 반환한다."""
+    app_number = str(app_number or "").strip().replace("-", "")
+    if not app_number or not claims_lookup_configured():
+        return ""
+    if app_number in _claims_cache:
+        return _claims_cache[app_number]
+
+    claims = ""
+    try:
+        raw = _request(
+            config.KIPRIS_KR_DETAIL_API_URL,
+            {"applicationNumber": app_number, "ServiceKey": config.KIPRIS_API_KEY},
+        )
+        root = ET.fromstring(raw)
+        texts = []
+        for tag in _CLAIM_TEXT_TAGS:
+            for element in root.iter(tag):
+                text = (element.text or "").strip()
+                if text:
+                    texts.append(text)
+            if texts:
+                break
+        claims = "\n".join(
+            f"{i}. {t}" if not t[:3].strip().rstrip(".").isdigit() else t
+            for i, t in enumerate(texts, start=1)
+        )
+    except (PatentSearchError, ET.ParseError):
+        claims = ""
+
+    _claims_cache[app_number] = claims
+    return claims
+
+
+def enrich_claims(patents: list, limit: int = 5) -> None:
+    """국내특허 상위 limit건에 청구항 원문을 채운다 (가능한 경우에만)."""
+    if not claims_lookup_configured():
+        return
+    count = 0
+    for patent in patents:
+        if count >= limit:
+            break
+        if patent.get("source") != "국내" or patent.get("claims"):
+            continue
+        claims = fetch_claims(patent.get("app_number"))
+        if claims:
+            patent["claims"] = claims
+        count += 1

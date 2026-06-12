@@ -18,6 +18,8 @@ KIPRIS_API_KEY = os.getenv("KIPRIS_API_KEY", "").strip()
 KIPRIS_KR_API_URL = os.getenv("KIPRIS_KR_API_URL", "").strip()
 KIPRIS_FOREIGN_API_URL = os.getenv("KIPRIS_FOREIGN_API_URL", "").strip()
 KIPRIS_API_FORMAT = os.getenv("KIPRIS_API_FORMAT", "xml").strip().lower()
+# (선택) 청구항 원문 상세 조회 주소 — 설정 시 청구항 매칭 정확도가 올라간다.
+KIPRIS_KR_DETAIL_API_URL = os.getenv("KIPRIS_KR_DETAIL_API_URL", "").strip()
 
 APP_TITLE = "GPC IP Lens"
 

@@ -5,6 +5,7 @@
 """
 import pandas as pd
 
+from src import synonyms
 from src.utils import token_set
 
 # 매칭표 확인 대상 유사특허 수
@@ -24,6 +25,8 @@ def build_claim_mapping(keywords: list, candidates: list) -> pd.DataFrame:
     targets = candidates[:TOP_PATENTS_TO_CHECK]
     rows = []
     for keyword in keywords:
+        # 동의어 표기(예: 프리캐스트/PC)도 같은 구성요소로 본다.
+        variants = set(synonyms.expand_term(keyword))
         in_claims, in_text, no_text = [], [], []
         for patent in targets:
             claims_tokens = token_set(patent.get("claims"))
@@ -33,9 +36,9 @@ def build_claim_mapping(keywords: list, candidates: list) -> pd.DataFrame:
             label = _patent_label(patent)
             if not claims_tokens and not text_tokens:
                 no_text.append(label)
-            elif keyword in claims_tokens:
+            elif variants & claims_tokens:
                 in_claims.append(label)
-            elif keyword in text_tokens:
+            elif variants & text_tokens:
                 in_text.append(label)
 
         if in_claims:

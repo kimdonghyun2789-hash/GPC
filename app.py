@@ -3,12 +3,16 @@ import io
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as st_html
 
-from src import config, favorites, ideas, patent_search
+from src import config, favorites, ideas, patent_search, synonyms
 from src.claim_mapping import build_claim_mapping
 from src.differentiation import DIFF_FIELDS, build_draft
-from src.keyword_analysis import build_search_queries, extract_keywords
+from src.keyword_analysis import (
+    build_foreign_queries,
+    build_search_queries,
+    extract_keywords,
+)
+from src.patent_sources import kipris_source
 from src.patent_sources.kipris_source import PatentSearchError
 from src.report_generator import generate_report
 from src.similarity import analyze
@@ -19,6 +23,7 @@ from src.ui.styles import apply_styles
 st.set_page_config(page_title=config.APP_TITLE, layout="wide")
 apply_styles()
 config.ensure_dirs()
+synonyms.ensure_file()
 
 MENU_ITEMS = ["아이디어 검토", "특허 검색", "아이디어 관리", "관심특허", "보고서"]
 
@@ -46,10 +51,11 @@ def run_review_pipeline(idea_text: str, scope: str, top_n: int):
 
         st.write("핵심 키워드 추출 및 검색어 후보 생성 중...")
         queries = build_search_queries(keywords)
+        foreign_queries = build_foreign_queries(keywords)
 
         st.write("특허 검색 중...")
         try:
-            search_result = patent_search.run_search(scope, queries)
+            search_result = patent_search.run_search(scope, queries, foreign_queries)
         except PatentSearchError as error:
             status.update(label="특허 검색에 실패했습니다.", state="error")
             return {"idea_id": idea_id, "error": error}
@@ -62,6 +68,10 @@ def run_review_pipeline(idea_text: str, scope: str, top_n: int):
         st.write(f"검색 완료: {len(patents)}건 수집")
         st.write("유사특허 분석 중...")
         candidates = analyze(idea_text, keywords, patents, top_n)
+
+        if kipris_source.claims_lookup_configured():
+            st.write("주요 유사특허 청구항 원문 조회 중...")
+            kipris_source.enrich_claims(candidates)
 
         st.write("기본 통계 생성 중...")
         stats = build_statistics(patents, candidates)
@@ -487,9 +497,7 @@ def page_reports():
         )
 
     with st.expander("보고서 미리보기", expanded=True):
-        st_html.html(
-            html_path.read_text(encoding="utf-8"), height=800, scrolling=True
-        )
+        st.iframe(html_path, height=800)
 
 
 # ---------------------------------------------------------------------------

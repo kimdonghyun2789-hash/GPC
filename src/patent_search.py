@@ -43,9 +43,10 @@ def _search_one_scope(search_fn, queries: list) -> tuple:
     return _dedupe(collected)[:MAX_COLLECT], used_queries
 
 
-def run_search(scope: str, queries: list) -> dict:
+def run_search(scope: str, queries: list, foreign_queries: list = None) -> dict:
     """범위별 검색 실행. 반환: {"patents": [...], "used_queries": [...]}
 
+    해외 검색은 foreign_queries(영문 표기 우선)가 주어지면 그것을 사용한다.
     국내+해외 검색은 한쪽이 실패해도 다른 쪽 결과는 살리고,
     양쪽 모두 실패한 경우에만 오류를 올린다.
     """
@@ -53,15 +54,19 @@ def run_search(scope: str, queries: list) -> dict:
     used_queries = []
     errors = []
 
-    search_fns = []
+    search_plans = []
     if scope in ("국내특허", "국내+해외"):
-        search_fns.append(kipris_source.search_kr)
+        search_plans.append((kipris_source.search_kr, queries))
     if scope in ("해외특허", "국내+해외"):
-        search_fns.append(kipris_source.search_foreign)
+        search_plans.append(
+            (kipris_source.search_foreign, foreign_queries or queries)
+        )
 
-    for search_fn in search_fns:
+    for search_fn, scope_query_list in search_plans:
         try:
-            scope_patents, scope_queries = _search_one_scope(search_fn, queries)
+            scope_patents, scope_queries = _search_one_scope(
+                search_fn, scope_query_list
+            )
         except PatentSearchError as exc:
             errors.append(exc)
             continue

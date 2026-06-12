@@ -5,7 +5,13 @@
 """
 from collections import Counter
 
+from src import synonyms
 from src.utils import jaccard, overlap_ratio, token_set
+
+
+def _canonical_set(text) -> set:
+    """동의어를 대표어로 정규화한 토큰 집합 (프리캐스트 = PC 로 취급)."""
+    return synonyms.canonicalize_tokens(token_set(text))
 
 
 def _ipc_main_class(ipc: str) -> str:
@@ -52,15 +58,23 @@ def _review_reason(grade: str, matched_keywords: list, has_claims: bool) -> str:
 
 def analyze(idea_text: str, keywords: list, patents: list, top_n: int) -> list:
     """유사도 점수 상위 top_n 건을 순위와 함께 반환한다."""
-    idea_tokens = token_set(idea_text)
-    keyword_tokens = set(keywords)
+    idea_tokens = _canonical_set(idea_text)
+    # 키워드별 대표어 매핑 (표시는 원래 키워드로, 비교는 대표어로)
+    keyword_canonical = {
+        keyword: next(iter(synonyms.canonicalize_tokens({keyword})))
+        for keyword in keywords
+    }
+    keyword_tokens = set(keyword_canonical.values())
+    canonical_to_keyword = {}
+    for keyword, canonical in keyword_canonical.items():
+        canonical_to_keyword.setdefault(canonical, keyword)
     dominant_ipc = _dominant_ipc_classes(patents)
 
     scored = []
     for patent in patents:
-        title_tokens = token_set(patent.get("title"))
-        abstract_tokens = token_set(patent.get("abstract"))
-        claims_tokens = token_set(patent.get("claims"))
+        title_tokens = _canonical_set(patent.get("title"))
+        abstract_tokens = _canonical_set(patent.get("abstract"))
+        claims_tokens = _canonical_set(patent.get("claims"))
 
         title_sim = jaccard(idea_tokens, title_tokens)
         abstract_sim = jaccard(idea_tokens, abstract_tokens)
@@ -86,8 +100,11 @@ def analyze(idea_text: str, keywords: list, patents: list, top_n: int) -> list:
                 + 0.10 * ipc_match
             )
 
+        matched_canonical = keyword_tokens & (
+            title_tokens | abstract_tokens | claims_tokens
+        )
         matched_keywords = sorted(
-            keyword_tokens & (title_tokens | abstract_tokens | claims_tokens),
+            (canonical_to_keyword.get(c, c) for c in matched_canonical),
             key=lambda k: keywords.index(k) if k in keywords else 99,
         )
         grade = _grade(score)

@@ -33,10 +33,24 @@ KIPRIS_API_KEY=발급받은 인증키
 KIPRIS_KR_API_URL=국내특허 검색 서비스 주소
 KIPRIS_FOREIGN_API_URL=해외특허 검색 서비스 주소
 KIPRIS_API_FORMAT=xml
+KIPRIS_KR_DETAIL_API_URL=청구항 상세 조회 주소 (선택)
 ```
 
 설정이 비어 있으면 화면에 "특허 검색을 사용할 수 없습니다. 설정 정보를
 확인하세요."가 표시되고, 상세 원인은 "상세 오류 보기"에서 확인할 수 있습니다.
+
+`KIPRIS_KR_DETAIL_API_URL`을 입력하면 주요 유사특허의 청구항 원문을
+자동으로 조회해 청구항 키워드 매칭과 상세보기에 반영합니다. (선택 사항)
+
+## 동의어 사전
+
+`data/synonyms.csv` 파일로 사내 기술용어의 표기 차이를 관리합니다.
+(예: PC = 프리캐스트 = precast) 처음 실행 시 기본 사전이 만들어지며,
+Excel로 열어 직접 추가/수정할 수 있습니다.
+
+- 컬럼: `대표어`, `동의어` (여러 개는 `|` 로 구분)
+- 검색어 후보 확장, 해외 검색 영문 변환, 유사도 비교,
+  청구항 키워드 매칭에 모두 적용됩니다.
 
 ## 검토 흐름
 
@@ -69,6 +83,7 @@ requirements.txt
 assets/  data/  reports/
 src/
   config.py             # 설정/경로/옵션
+  synonyms.py           # 동의어 사전
   keyword_analysis.py   # 핵심 키워드·검색어 후보
   patent_search.py      # 검색 범위별 검색 실행
   similarity.py         # 유사특허 분석(등급/사유)

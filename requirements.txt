@@ -1,4 +1,4 @@
-streamlit>=1.32
+streamlit>=1.58
 pandas>=2.0
 requests>=2.31
 python-dotenv>=1.0

@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from src import config, favorites
+from src.patent_sources import kipris_source
 
 
 def _esc(value) -> str:
@@ -141,6 +142,16 @@ def patent_detail(patent: dict, idea_id: str = "") -> None:
     st.write(abstract if abstract else "제공된 요약이 없습니다.")
 
     claims = str(patent.get("claims") or "").strip()
+    if (
+        not claims
+        and patent.get("source") == "국내"
+        and kipris_source.claims_lookup_configured()
+    ):
+        with st.spinner("청구항 원문을 조회하는 중..."):
+            claims = kipris_source.fetch_claims(patent.get("app_number"))
+        if claims:
+            patent["claims"] = claims
+
     st.markdown("**대표 청구항**")
     if claims:
         st.write(claims.split("\n")[0])
