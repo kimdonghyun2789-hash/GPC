@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.env
+오류로그.txt
+
+# 로컬 데이터/보고서는 커밋하지 않는다
+data/*
+!data/.gitkeep
+reports/*
+!reports/.gitkeep
