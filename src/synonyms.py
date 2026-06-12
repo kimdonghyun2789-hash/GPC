@@ -89,10 +89,22 @@ def _build_maps():
     return _cache["maps"]
 
 
+def canonicalize(token: str) -> str:
+    """토큰 하나를 대표어로 정규화한다."""
+    canonical, _ = _build_maps()
+    return canonical.get(token, token)
+
+
 def canonicalize_tokens(tokens) -> set:
     """토큰 집합을 대표어 기준으로 정규화한다 (동의어 = 같은 토큰)."""
     canonical, _ = _build_maps()
     return {canonical.get(t, t) for t in tokens}
+
+
+def canonicalize_list(tokens: list) -> list:
+    """토큰 목록을 빈도를 유지한 채 대표어로 정규화한다 (TF-IDF용)."""
+    canonical, _ = _build_maps()
+    return [canonical.get(t, t) for t in tokens]
 
 
 def expand_term(term: str) -> list:
