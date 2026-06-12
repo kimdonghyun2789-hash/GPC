@@ -58,6 +58,20 @@ div[data-testid="stExpander"] {
 }
 .gpc-stat-label { font-size: 0.78rem; color: #6b7280; }
 .gpc-stat-value { font-size: 1.5rem; font-weight: 700; color: #111827; }
+
+/* 핸드폰 화면 최적화 */
+@media (max-width: 640px) {
+    .block-container {
+        padding: 1rem 0.9rem 3rem 0.9rem !important;
+    }
+    h1 { font-size: 1.35rem !important; }
+    h2 { font-size: 1.1rem !important; }
+    h3 { font-size: 1rem !important; }
+    .gpc-stat-value { font-size: 1.15rem; }
+    .gpc-card { padding: 0.75rem 0.9rem; }
+    .stButton > button[kind="primary"] { width: 100%; }
+    div[data-testid="stDownloadButton"] > button { width: 100%; }
+}
 </style>
 """
 

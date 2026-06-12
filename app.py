@@ -565,6 +565,7 @@ def main():
     with st.sidebar:
         st.markdown(f"### {config.APP_TITLE}")
         menu = st.radio("메뉴", MENU_ITEMS, label_visibility="collapsed")
+        components.mobile_access_panel()
 
     pages = {
         "아이디어 검토": page_idea_review,

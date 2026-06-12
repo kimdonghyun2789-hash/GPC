@@ -1,5 +1,7 @@
 """화면 공통 컴포넌트: chip, badge, 통계 카드, 표, 상세보기."""
 import html
+import io
+import socket
 
 import pandas as pd
 import streamlit as st
@@ -26,6 +28,53 @@ def source_badge(source: str) -> str:
     """국가/출처 badge HTML."""
     css = "gpc-badge-kr" if str(source) == "국내" else "gpc-badge-foreign"
     return f"<span class='gpc-badge {css}'>{_esc(source)}</span>"
+
+
+def _lan_ip() -> str:
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("8.8.8.8", 80))
+        ip = probe.getsockname()[0]
+        probe.close()
+        return ip
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return ""
+
+
+def network_url() -> str:
+    """핸드폰 접속 모드(외부 접속 허용)로 실행 중일 때만 접속 주소를 반환한다."""
+    try:
+        if st.get_option("server.address") != "0.0.0.0":
+            return ""
+        ip = _lan_ip()
+        if not ip or ip.startswith("127."):
+            return ""
+        return f"http://{ip}:{st.get_option('server.port')}"
+    except Exception:
+        return ""
+
+
+def mobile_access_panel() -> None:
+    """사이드바용 — 같은 와이파이의 핸드폰에서 접속할 주소와 QR코드."""
+    url = network_url()
+    if not url:
+        return
+    with st.expander("핸드폰에서 보기"):
+        st.caption("같은 와이파이에 연결된 핸드폰으로 접속하세요.")
+        st.code(url, language=None)
+        try:
+            import qrcode
+
+            image = qrcode.make(url)
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            st.image(buffer.getvalue(), width=160)
+            st.caption("카메라로 QR코드를 찍으면 바로 열립니다.")
+        except Exception:
+            pass
 
 
 def search_error(error) -> None:
