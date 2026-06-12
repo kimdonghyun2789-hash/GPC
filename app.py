@@ -4,7 +4,7 @@ import io
 import pandas as pd
 import streamlit as st
 
-from src import config, favorites, ideas, patent_search, synonyms
+from src import config, favorites, ideas, monitoring, patent_search, synonyms
 from src.claim_mapping import build_claim_mapping
 from src.differentiation import DIFF_FIELDS, build_draft
 from src.keyword_analysis import (
@@ -82,6 +82,15 @@ def run_review_pipeline(idea_text: str, scope: str, top_n: int):
         st.write("차별화 포인트 초안 생성 중...")
         diff_draft = build_draft(idea_text, keywords, claim_df)
 
+        # 같은 아이디어의 이전 검토가 있으면 변경점을 계산한다
+        comparison = None
+        previous = monitoring.find_previous_idea(idea_text, idea_id)
+        if previous:
+            st.write(f"이전 검토({previous['idea_id']})와 비교 중...")
+            comparison = monitoring.compare_with_previous(
+                previous["idea_id"], candidates
+            )
+
         ideas.save_collected(idea_id, candidates)
         ideas.update_idea(
             idea_id,
@@ -103,6 +112,7 @@ def run_review_pipeline(idea_text: str, scope: str, top_n: int):
         "stats": stats,
         "claim_df": claim_df,
         "diff_draft": diff_draft,
+        "comparison": comparison,
     }
 
 
@@ -114,6 +124,32 @@ def render_review_result(review: dict):
 
     st.markdown(f"#### 검토 결과 — {idea_id}")
     components.keyword_chips(review["keywords"])
+
+    comparison = review.get("comparison")
+    if comparison:
+        st.info(monitoring.comparison_summary(comparison))
+        if comparison["new_patents"] or comparison["upgraded"]:
+            with st.expander("이전 검토 대비 변경점 보기"):
+                if comparison["new_patents"]:
+                    st.markdown("**신규 발견 특허**")
+                    components.candidates_table(comparison["new_patents"])
+                if comparison["upgraded"]:
+                    st.markdown("**등급 상승 특허**")
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "발명의 명칭": p.get("title", ""),
+                                    "이전 등급": p.get("previous_grade", ""),
+                                    "현재 등급": p.get("grade", ""),
+                                    "공개번호": p.get("pub_number", ""),
+                                }
+                                for p in comparison["upgraded"]
+                            ]
+                        ),
+                        hide_index=True,
+                        width="stretch",
+                    )
 
     st.markdown("### 기본 통계")
     components.statistics_section(review["stats"])
@@ -155,6 +191,7 @@ def render_review_result(review: dict):
         review["claim_df"],
         diff_values,
         favorites_df,
+        comparison_text=monitoring.comparison_summary(comparison),
     )
     ideas.update_idea(idea_id, report_html=html_path.name, results_xlsx=xlsx_path.name)
 
@@ -363,6 +400,27 @@ def page_idea_management():
                 ),
                 hide_index=True,
                 width="stretch",
+            )
+
+    # 검토일 이후 새로 공개된 특허 확인
+    check_key = f"new_patents_{selected_id}"
+    if st.button("신규 공개특허 확인", key=f"check_new_{selected_id}"):
+        try:
+            with st.spinner("검토일 이후 공개된 특허를 확인하는 중..."):
+                st.session_state[check_key] = monitoring.check_new_patents(idea)
+        except PatentSearchError as error:
+            st.session_state.pop(check_key, None)
+            components.search_error(error)
+    check_result = st.session_state.get(check_key)
+    if check_result is not None:
+        fresh = check_result["new_patents"]
+        if fresh:
+            st.warning(f"검토일 이후 새로 공개된 특허 {len(fresh)}건이 있습니다.")
+            components.candidates_table(fresh)
+        else:
+            st.success(
+                f"검토일 이후 새로 공개된 특허가 없습니다. "
+                f"(확인 대상 {check_result['checked']}건)"
             )
 
     html_name = idea.get("report_html", "")

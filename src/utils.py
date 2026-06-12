@@ -63,6 +63,12 @@ def overlap_ratio(base: set, other: set) -> float:
     return len(base & other) / len(base)
 
 
+def extract_compact_date(value) -> str:
+    """날짜 표기에서 YYYYMMDD 8자리를 추출한다. 실패 시 빈 문자열."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits[:8] if len(digits) >= 8 else ""
+
+
 def extract_year(*dates) -> str:
     for value in dates:
         match = _YEAR_RE.search(str(value or ""))

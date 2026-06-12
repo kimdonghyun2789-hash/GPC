@@ -133,6 +133,7 @@ def generate_report(
     diff_values: dict,
     favorites_df: pd.DataFrame,
     conclusion: str = "",
+    comparison_text: str = "",
 ) -> tuple:
     """보고서(html)와 결과 파일(xlsx)을 생성하고 경로를 반환한다."""
     config.ensure_dirs()
@@ -151,11 +152,17 @@ def generate_report(
         "필요 시 변리사 검토를 진행합니다."
     )
 
+    comparison_row = (
+        f"<tr><th>이전 검토 대비</th><td>{_esc(comparison_text)}</td></tr>"
+        if comparison_text
+        else ""
+    )
     sections = f"""
     <div class='card'><h2>1. 검토 개요</h2>
       <table class='kv'>
         <tr><th>작성일</th><td>{_esc(now_display())}</td></tr>
         <tr><th>검토상태</th><td>{_esc(idea.get('status', ''))}</td></tr>
+        {comparison_row}
       </table></div>
     <div class='card'><h2>2. Idea ID</h2><p><b>{_esc(idea_id)}</b></p></div>
     <div class='card'><h2>3. 입력 아이디어</h2><p>{_esc(idea.get('idea_text', ''))}</p></div>
@@ -190,8 +197,7 @@ def generate_report(
 
     html_path.write_text(document, encoding="utf-8")
 
-    overview_df = pd.DataFrame(
-        [
+    overview_rows = [
             ("Idea ID", idea_id),
             ("작성일", now_display()),
             ("입력 아이디어", idea.get("idea_text", "")),
@@ -202,9 +208,10 @@ def generate_report(
             ("유사특허 후보 수", stats.get("candidate_count", 0) if stats else 0),
             ("검토상태", idea.get("status", "")),
             ("주의사항", config.REPORT_DISCLAIMER),
-        ],
-        columns=["항목", "내용"],
-    )
+    ]
+    if comparison_text:
+        overview_rows.insert(2, ("이전 검토 대비", comparison_text))
+    overview_df = pd.DataFrame(overview_rows, columns=["항목", "내용"])
     diff_df = pd.DataFrame(
         [(label, diff_values.get(field, "")) for field, label in DIFF_FIELDS],
         columns=["관점", "내용"],

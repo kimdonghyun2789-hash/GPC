@@ -75,7 +75,8 @@ def save_idea(record: dict) -> None:
     ideas = load_ideas()
     ideas = ideas[ideas["idea_id"] != record["idea_id"]]
     row = {column: str(record.get(column, "")) for column in IDEA_COLUMNS}
-    row.setdefault("created_at", now_display())
+    if not row["created_at"]:
+        row["created_at"] = now_display()
     ideas = pd.concat([ideas, pd.DataFrame([row])], ignore_index=True)
     storage.save_df(ideas, storage.IDEA_DB)
 
