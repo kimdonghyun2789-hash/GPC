@@ -27,8 +27,11 @@ from services.kipris_client import KiprisClient
 from utils import cache_utils, config, db, ui
 from utils.text_utils import split_keywords
 
-st.set_page_config(page_title="IP³ · IP Cube", page_icon="◼", layout="wide",
-                   initial_sidebar_state="expanded")
+_ICON_PATH = config.BASE_DIR / "assets" / "brand" / "ip3-logo.png"
+st.set_page_config(
+    page_title="IP³ · IP Cube",
+    page_icon=str(_ICON_PATH) if _ICON_PATH.exists() else "◼",
+    layout="wide", initial_sidebar_state="expanded")
 ui.inject_theme()
 
 try:
@@ -41,6 +44,18 @@ MENU = [
     "Drawing Intelligence", "AI Patent Review", "History",
     "Export Center", "Settings",
 ]
+# 사이드바 표시용 한글 라벨 (내부 키는 영문 유지 — 페이지 매핑/로직 불변)
+MENU_KO = {
+    "Idea Canvas": "아이디어 입력",
+    "Patent Radar": "유사특허 분석",
+    "Patent DNA": "특허 DNA 비교",
+    "Landscape": "통계 · 기술분석",
+    "Drawing Intelligence": "도면 분석",
+    "AI Patent Review": "AI 검토",
+    "History": "기록 · 관심특허",
+    "Export Center": "보고서 · 내보내기",
+    "Settings": "설정",
+}
 
 DEMO_IDEA = {
     "title": "중공 PC 기둥 하부 배수 및 점검 일체형 구조",
@@ -183,7 +198,7 @@ def render_patent_detail(p: dict, idea_dna: dict):
             ui.status_badge(p.get("status", "-")),
             ui.group_badge(p.get("technology_group", "기타")),
             ui.grade_badge(p.get("grade", sim_mod.grade(score))),
-            f"<span class='gpc-badge' style='background:#E9F1FE;color:#1565E0'>"
+            f"<span class='gpc-badge' style='background:#E3EDFF;color:#0057FF'>"
             f"유사도 {score:.0f}</span>",
         ])
         st.markdown(f"<div style='margin:2px 0 10px'>{badges}</div>",
@@ -294,7 +309,7 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
 
 # ============================================================ 1. Idea Canvas
 def page_idea_canvas():
-    ui.page_header("Idea Canvas",
+    ui.page_header("아이디어 입력",
                    "아이디어를 입력하고 검색어를 확장한 뒤 KIPRIS 검색을 실행합니다.")
     if not gemini_service.is_available():
         st.info("Gemini API Key 가 설정되어 있지 않습니다. 검색어 확장과 AI "
@@ -404,7 +419,7 @@ def page_idea_canvas():
 
 # ============================================================ 2. Patent Radar
 def page_patent_radar():
-    ui.page_header("Patent Radar",
+    ui.page_header("유사특허 분석",
                    "유사특허 TOP N 표와 대표도면 갤러리를 한 화면에서 살펴봅니다.")
     df = require_results()
     if df.empty:
@@ -494,7 +509,7 @@ def page_patent_radar():
 
 # ============================================================ 3. Patent DNA
 def page_patent_dna():
-    ui.page_header("Patent DNA",
+    ui.page_header("특허 DNA 비교",
                    "내 아이디어와 선택한 특허의 구성을 항목별로 비교합니다.")
     df = require_results()
     if df.empty:
@@ -690,7 +705,7 @@ def _lc_network(df):
 
 
 def page_landscape():
-    ui.page_header("Landscape",
+    ui.page_header("통계 · 기술분석",
                    "검색 결과의 출원 동향·기술 발전·공백·네트워크를 한 곳에서 분석합니다.")
     df = require_results()
     if df.empty:
@@ -708,7 +723,7 @@ def page_landscape():
 
 # ============================================================ Drawing / AI Review
 def page_drawing_intelligence():
-    ui.page_header("Drawing Intelligence",
+    ui.page_header("도면 분석",
                    "대표도면을 중심으로 특허를 검토합니다. 도면 클릭 시 상세로 이동합니다.")
     df = require_results()
     if df.empty:
@@ -753,7 +768,7 @@ def page_drawing_intelligence():
 
 # ============================================================ 8. AI Review
 def page_ai_review():
-    ui.page_header("AI Patent Review",
+    ui.page_header("AI 검토",
                    "Gemini 기반 1차 검토 결과입니다. 최종 법률 판단이 아닌 참고용입니다.")
     df = require_results()
     if df.empty:
@@ -825,7 +840,7 @@ def _reconstruct_results(rows: list) -> list:
 
 
 def page_history():
-    ui.page_header("History",
+    ui.page_header("기록 · 관심특허",
                    "지난 분석을 다시 불러오거나 관심 특허를 모아 봅니다.")
     tab1, tab2 = st.tabs(["검색 이력", "관심 특허"])
 
@@ -904,7 +919,7 @@ def page_history():
 
 # ============================================================ 10. Export Center
 def page_export_center():
-    ui.page_header("Export Center",
+    ui.page_header("보고서 · 내보내기",
                    "분석 결과를 Excel · PDF · 이미지로 내보냅니다.")
     df = require_results()
     if df.empty:
@@ -993,7 +1008,7 @@ def page_export_center():
 
 # ============================================================ 11. Settings
 def page_settings():
-    ui.page_header("Settings",
+    ui.page_header("설정",
                    "API Key · 데이터 모드 · 데이터베이스/캐시를 관리합니다.")
     st.caption("입력한 키는 로컬 SQLite settings 테이블에만 저장되며 외부로 "
                "전송되지 않습니다. (외부 전송은 Gemini/KIPRIS 호출에 한정)")
@@ -1073,7 +1088,8 @@ def page_settings():
 def main():
     with st.sidebar:
         ui.sidebar_brand()
-        choice = st.radio("메뉴", MENU, label_visibility="collapsed")
+        choice = st.radio("메뉴", MENU, label_visibility="collapsed",
+                          format_func=lambda k: MENU_KO.get(k, k))
         df = get_results_df()
         if not df.empty:
             st.markdown("<div style='height:18px'></div>",

@@ -116,12 +116,27 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
                             topMargin=15 * mm, bottomMargin=15 * mm)
     story = []
 
-    # 표지/헤더
+    # 표지/헤더 — 최종 로고 PNG 적용 (비율 유지)
+    logo_path = config.BASE_DIR / "assets" / "brand" / "ip3-logo.png"
+    logo_img = None
+    if logo_path.exists():
+        try:
+            from PIL import Image as _PILImage
+            _im = _PILImage.open(logo_path).convert("RGB")
+            _im.thumbnail((480, 480), _PILImage.LANCZOS)
+            _b = BytesIO(); _im.save(_b, format="PNG")
+            logo_img = _img(_b.getvalue(), max_w_mm=42, max_h_mm=42)
+        except Exception:
+            logo_img = None
+    if logo_img is not None:
+        story.append(logo_img)
+        story.append(Spacer(1, 8))
+    else:
+        story.append(Paragraph(
+            'iP<super rise=10 size=24><font color="#0057FF">3</font></super>',
+            st["cover_logo"]))
     story.append(Paragraph(
-        'iP<super rise=10 size=24><font color="#1565E0">3</font></super>',
-        st["cover_logo"]))
-    story.append(Paragraph(
-        'iP<super rise=6 size=11><font color="#1565E0">3</font></super>'
+        'iP<super rise=6 size=11><font color="#0057FF">3</font></super>'
         ' Patent Review Report', st["cover_title"]))
     story.append(Paragraph("Intellectual Property", st["cover_line"]))
     story.append(Paragraph("Idea to Patent", st["cover_line"]))
