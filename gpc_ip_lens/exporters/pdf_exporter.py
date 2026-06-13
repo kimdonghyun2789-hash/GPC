@@ -16,11 +16,30 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer, Table,
-                                TableStyle)
+from reportlab.platypus import (Image, Paragraph, SimpleDocTemplate, Spacer,
+                                Table, TableStyle)
 
 from analyzers import statistics as stats
 from utils import config
+
+
+def _img(png_bytes, max_w_mm=170, max_h_mm=110):
+    """PNG bytes → reportlab Image (비율 유지). 실패 시 None."""
+    if not png_bytes:
+        return None
+    try:
+        from reportlab.lib.utils import ImageReader
+        reader = ImageReader(BytesIO(png_bytes))
+        iw, ih = reader.getSize()
+        ratio = ih / iw if iw else 0.6
+        w = max_w_mm * mm
+        h = w * ratio
+        if h > max_h_mm * mm:
+            h = max_h_mm * mm
+            w = h / ratio if ratio else max_w_mm * mm
+        return Image(BytesIO(png_bytes), width=w, height=h)
+    except Exception:
+        return None
 
 KOREAN_FONT = "HYSMyeongJo-Medium"
 
@@ -72,8 +91,14 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
                timeline_lines: List[str],
                review: Optional[dict] = None,
                top_n: int = 10,
-               file_path: Optional[str] = None) -> bytes:
-    """분석 리포트 PDF 생성. bytes 반환 (file_path 지정 시 저장도)."""
+               file_path: Optional[str] = None,
+               images: Optional[dict] = None) -> bytes:
+    """분석 리포트 PDF 생성. bytes 반환 (file_path 지정 시 저장도).
+
+    images: {"network": png bytes, "yearly": png bytes,
+             "drawings": [(caption, png bytes), ...]} (선택)
+    """
+    images = images or {}
     font = _register_font()
     st = _styles(font)
     buf = BytesIO()
@@ -128,6 +153,11 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
         data = [["기술군", "건수"]] + [
             [r["기술군"], str(r["건수"])] for _, r in gc.iterrows()]
         story.append(_table(data, font, col_widths=[60 * mm, 25 * mm]))
+        chart = _img(images.get("yearly"), max_h_mm=70)
+        if chart:
+            story.append(Spacer(1, 6))
+            story.append(Paragraph("연도별 출원 추이", st["small"]))
+            story.append(chart)
     else:
         story.append(Paragraph("통계 데이터 없음", st["body"]))
 
@@ -136,6 +166,32 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
     for line in (timeline_lines or ["-"]):
         clean = str(line).replace("**", "")
         story.append(Paragraph(f"• {clean}", st["body"]))
+    netmap_img = _img(images.get("network"), max_h_mm=95)
+    if netmap_img:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("시간축 네트워크맵", st["small"]))
+        story.append(netmap_img)
+
+    # 5-2. 대표도면
+    drawings = images.get("drawings") or []
+    if drawings:
+        story.append(Paragraph("대표도면 (상위 유사특허)", st["h2"]))
+        cells, captions = [], []
+        for cap, png in drawings[:6]:
+            di = _img(png, max_w_mm=52, max_h_mm=40)
+            cells.append(di if di else Paragraph("-", st["small"]))
+            captions.append(Paragraph(_clip(cap, 26), st["small"]))
+        rows = [cells[i:i + 3] for i in range(0, len(cells), 3)]
+        cap_rows = [captions[i:i + 3] for i in range(0, len(captions), 3)]
+        interleaved = []
+        for r, c in zip(rows, cap_rows):
+            interleaved.append(r)
+            interleaved.append(c)
+        dtable = Table(interleaved, colWidths=[56 * mm] * 3)
+        dtable.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+        story.append(dtable)
 
     # 6. AI 검토 요약
     story.append(Paragraph("6. AI 1차 검토 요약", st["h2"]))

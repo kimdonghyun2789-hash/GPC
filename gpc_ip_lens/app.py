@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from analyzers import ai_review as review_mod
+from analyzers import claim_chart
 from analyzers import keyword_expander
 from analyzers import network_map as netmap
 from analyzers import patent_dna as dna_mod
@@ -38,7 +39,8 @@ except Exception as exc:  # DB 오류 시 사용자 안내
 MENU = [
     "Idea Canvas", "Patent Radar", "Patent DNA", "Tech Landscape",
     "Technology Timeline", "Time Network Map", "Drawing Intelligence",
-    "AI Patent Review", "Strategy Board", "Export Center", "Settings",
+    "AI Patent Review", "Strategy Board", "History", "Export Center",
+    "Settings",
 ]
 
 DEMO_IDEA = {
@@ -199,6 +201,16 @@ def render_patent_detail(p: dict, idea_dna: dict):
         url = p.get("kipris_url") or ""
         if url:
             st.markdown(f"[KIPRIS 원문 보기]({url})")
+        app_no = p.get("application_no", "")
+        marked = db.is_bookmarked(app_no) if app_no else False
+        blabel = "★ 관심 특허 해제" if marked else "☆ 관심 특허 추가"
+        if st.button(blabel, key=f"bm_{app_no}"):
+            if marked:
+                db.remove_bookmark(app_no)
+            else:
+                db.add_bookmark(app_no, p.get("title", ""),
+                                p.get("applicant", ""))
+            st.rerun()
     with st.expander("요약", expanded=True):
         st.write(p.get("abstract", "-"))
     with st.expander("대표청구항"):
@@ -519,6 +531,30 @@ def page_patent_dna():
     avg = cmp_df[cmp_df["일치도(%)"] > 0]["일치도(%)"].mean()
     st.metric("DNA 평균 일치도", f"{avg:.0f}%" if pd.notna(avg) else "-")
 
+    # ----- 청구항 대비표 (Claim Chart)
+    st.markdown("---")
+    st.markdown("##### 청구항 대비표")
+    st.caption(claim_chart.DISCLAIMER)
+    if st.button("청구항 대비표 생성", key="gen_claimchart"):
+        with st.spinner("대표청구항을 구성요소로 분해·비교 중..."):
+            rows_cc, method = claim_chart.build_claim_chart(
+                ss_get("idea", {}), idea_dna, p)
+        st.session_state["claim_chart"] = rows_cc
+        st.session_state["claim_chart_for"] = p.get("application_no")
+        st.session_state["claim_chart_method"] = method
+    if (ss_get("claim_chart") and
+            ss_get("claim_chart_for") == p.get("application_no")):
+        rows_cc = ss_get("claim_chart")
+        summ = claim_chart.summary(rows_cc)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("일치 가능", summ["일치 가능"])
+        m2.metric("부분", summ["부분"])
+        m3.metric("차이(차별 후보)", summ["차이"])
+        st.dataframe(pd.DataFrame(rows_cc), use_container_width=True,
+                     hide_index=True)
+        if ss_get("claim_chart_method") == "fallback":
+            st.caption("Gemini 미사용 — 규칙 기반 구성요소 분해 결과입니다.")
+
 
 # ============================================================ 4. Tech Landscape
 def page_tech_landscape():
@@ -818,6 +854,106 @@ def page_strategy_board():
                 "차별화 R&D 후보입니다. (Time Network Map 의 음영 구간 참조)")
 
 
+# ============================================================ History
+def _reconstruct_results(rows: list) -> list:
+    """DB 행(load_idea_results) → 앱 results 포맷으로 복원."""
+    results = []
+    for r in rows:
+        p = dict(r)
+        try:
+            p["matched_keywords"] = json.loads(r.get("matched_keywords") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            p["matched_keywords"] = []
+        try:
+            p["patent_dna"] = json.loads(r.get("patent_dna_json") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            p["patent_dna"] = {}
+        p["grade"] = sim_mod.grade(p.get("total_score", 0))
+        p["comparison_text"] = sim_mod.build_patent_text(p)
+        results.append(p)
+    for rank, p in enumerate(results, start=1):
+        p["rank"] = rank
+    return results
+
+
+def page_history():
+    ui.page_header("History",
+                   "지난 분석을 다시 불러오거나 관심 특허를 모아 봅니다.")
+    tab1, tab2 = st.tabs(["검색 이력", "관심 특허"])
+
+    with tab1:
+        ideas = db.list_ideas()
+        if not ideas:
+            st.info("저장된 검색 이력이 없습니다. Idea Canvas 에서 검색을 "
+                    "실행하면 자동으로 기록됩니다.")
+        else:
+            hist = pd.DataFrame([{
+                "id": i["id"], "아이디어": i["title"],
+                "키워드": i["keywords"], "결과 수": i["n_results"],
+                "생성일시": str(i["created_at"])[:16].replace("T", " "),
+            } for i in ideas])
+            st.dataframe(hist.drop(columns=["id"]), hide_index=True,
+                         use_container_width=True)
+            labels = {f"[{i['created_at'][:10]}] {i['title']} "
+                      f"({i['n_results']}건)": i["id"] for i in ideas}
+            pick = st.selectbox("불러올 분석 선택", list(labels.keys()))
+            if st.button("이 분석 불러오기", type="primary"):
+                idea_id = labels[pick]
+                rows = db.load_idea_results(idea_id)
+                if not rows:
+                    st.warning("이 검색에는 저장된 결과가 없습니다.")
+                else:
+                    meta = next(i for i in ideas if i["id"] == idea_id)
+                    try:
+                        idea_dna = json.loads(meta.get("idea_dna_json") or "{}")
+                    except (json.JSONDecodeError, TypeError):
+                        idea_dna = {}
+                    results = _reconstruct_results(rows)
+                    st.session_state["idea"] = {
+                        "title": meta["title"], "description": meta["description"],
+                        "keywords": meta["keywords"],
+                        "exclude_keywords": meta["exclude_keywords"],
+                        "idea_dna": idea_dna}
+                    st.session_state["results"] = results
+                    st.session_state["results_df"] = stats.to_dataframe(results)
+                    st.session_state["top_n"] = min(10, len(results))
+                    st.session_state["selected_patent"] = \
+                        results[0]["application_no"]
+                    for k in ("review", "timeline_lines", "claim_chart"):
+                        st.session_state.pop(k, None)
+                    st.success(f"'{meta['title']}' 분석을 불러왔습니다 "
+                               f"({len(results)}건). 다른 메뉴에서 확인하세요.")
+
+    with tab2:
+        marks = db.list_bookmarks()
+        if not marks:
+            st.info("관심 특허가 없습니다. Patent Radar 등에서 특허 상세의 "
+                    "'관심 특허 추가'로 담을 수 있습니다.")
+        else:
+            bm = pd.DataFrame([{
+                "특허명": m.get("title") or "-",
+                "출원인": m.get("applicant") or "-",
+                "출원번호": m.get("application_no"),
+                "상태": m.get("status") or "-",
+                "기술군": m.get("technology_group") or "-",
+                "KIPRIS": m.get("kipris_url") or "",
+            } for m in marks])
+            st.dataframe(
+                bm, hide_index=True, use_container_width=True,
+                column_config={"KIPRIS": st.column_config.LinkColumn(
+                    "KIPRIS", display_text="원문")})
+            c1, c2 = st.columns([2, 1])
+            rm = c1.selectbox("해제할 특허",
+                              [m["application_no"] for m in marks])
+            if c2.button("관심 특허 해제"):
+                db.remove_bookmark(rm)
+                st.rerun()
+            st.download_button(
+                "관심 특허 Excel 다운로드",
+                data=bm.to_csv(index=False).encode("utf-8-sig"),
+                file_name="gpc_bookmarks.csv", mime="text/csv")
+
+
 # ============================================================ 10. Export Center
 def page_export_center():
     ui.page_header("Export Center",
@@ -834,6 +970,26 @@ def page_export_center():
     queries = (ss_get("expansion") or {}).get("search_queries", [])
     top_n = ss_get("top_n", 10)
 
+    rich = st.toggle("PDF에 도면·네트워크맵·차트 이미지 포함", value=True,
+                     help="이미지 변환(kaleido)이 없으면 도면만 포함됩니다.")
+
+    def build_report_images():
+        imgs = {}
+        # 대표도면은 PIL 로 항상 생성 가능
+        imgs["drawings"] = [
+            (drawing_caption(r.to_dict()), placeholder_drawing(r.to_dict()))
+            for _, r in df.head(6).iterrows()
+            if not str(r.get("drawing_url") or "").startswith("http")
+        ]
+        # 네트워크맵 / 차트는 kaleido 필요 (없으면 None → 건너뜀)
+        fig = ss_get("network_fig") or netmap.make_time_network_figure(
+            df, idea.get("title", ""))
+        imgs["network"] = image_exporter.figure_to_png(fig)
+        yfig = px.line(stats.yearly_counts(df), x="연도", y="건수",
+                       markers=True, title="연도별 출원 추이")
+        imgs["yearly"] = image_exporter.figure_to_png(yfig)
+        return imgs
+
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown("##### Excel")
@@ -849,8 +1005,9 @@ def page_export_center():
     with c2:
         st.markdown("##### PDF 리포트")
         try:
+            report_imgs = build_report_images() if rich else None
             pdf = pdf_exporter.export_pdf(df, idea, queries, timeline_lines,
-                                          review, top_n)
+                                          review, top_n, images=report_imgs)
             st.download_button("PDF 다운로드", data=pdf,
                                file_name="gpc_ip_lens_report.pdf",
                                mime="application/pdf",
@@ -938,6 +1095,33 @@ def page_settings():
         st.session_state["idea"]["idea_dna"] = expansion.get("idea_dna", {})
         run_search_pipeline(st.session_state["idea"], expansion, top_n=10)
 
+    # ----- 유사도 가중치 조정
+    st.markdown("---")
+    st.markdown("##### 유사도 기준 (가중치) 조정")
+    st.caption("종합 유사도 산정 비중입니다. 합계는 자동 정규화되며, "
+               "저장 후 새로 검색할 때 적용됩니다.")
+    w = sim_mod.load_weights()
+    labels = {"vector": "벡터 의미", "dna": "특허 DNA", "keyword": "키워드",
+              "claim": "대표청구항", "ipc": "IPC/CPC", "ai_risk": "AI 위험도"}
+    with st.form("weights_form"):
+        cols = st.columns(3)
+        new_w = {}
+        for i, (key, label) in enumerate(labels.items()):
+            new_w[key] = cols[i % 3].slider(
+                label, 0, 50, int(round(w[key] * 100)), step=5)
+        wc1, wc2 = st.columns(2)
+        if wc1.form_submit_button("가중치 저장", type="primary"):
+            import json as _json
+            if sum(new_w.values()) == 0:
+                st.error("가중치 합이 0일 수 없습니다.")
+            else:
+                config.set_setting("SIMILARITY_WEIGHTS",
+                                   _json.dumps(new_w))
+                st.success("저장했습니다. 다음 검색부터 적용됩니다.")
+        if wc2.form_submit_button("기본값으로 복원"):
+            config.set_setting("SIMILARITY_WEIGHTS", "")
+            st.success("기본 가중치로 복원했습니다.")
+
     st.markdown("---")
     st.markdown(
         f"- Gemini 사용 가능: **{'예' if gemini_service.is_available() else '아니오 (fallback 동작)'}**\n"
@@ -960,12 +1144,14 @@ def main():
             c2.metric("최고 유사도", f"{df['total_score'].max():.0f}")
 
     pages = {
-        MENU[0]: page_idea_canvas, MENU[1]: page_patent_radar,
-        MENU[2]: page_patent_dna, MENU[3]: page_tech_landscape,
-        MENU[4]: page_timeline, MENU[5]: page_network_map,
-        MENU[6]: page_drawing_intelligence, MENU[7]: page_ai_review,
-        MENU[8]: page_strategy_board, MENU[9]: page_export_center,
-        MENU[10]: page_settings,
+        "Idea Canvas": page_idea_canvas, "Patent Radar": page_patent_radar,
+        "Patent DNA": page_patent_dna, "Tech Landscape": page_tech_landscape,
+        "Technology Timeline": page_timeline,
+        "Time Network Map": page_network_map,
+        "Drawing Intelligence": page_drawing_intelligence,
+        "AI Patent Review": page_ai_review,
+        "Strategy Board": page_strategy_board, "History": page_history,
+        "Export Center": page_export_center, "Settings": page_settings,
     }
     pages[choice]()
 

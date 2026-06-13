@@ -157,14 +157,37 @@ def ipc_score(idea_groups: List[str], patent_ipc: str) -> float:
 
 
 # ------------------------------------------------------------- 종합 점수
+def load_weights() -> dict:
+    """Settings(DB)에 저장된 사용자 가중치를 읽는다. 없으면 기본값.
+
+    합계가 1이 아니어도 자동 정규화하여 항상 0~100 범위를 유지한다.
+    """
+    weights = dict(TOTAL_WEIGHTS)
+    try:
+        import json
+        from utils import db
+        raw = db.get_setting("SIMILARITY_WEIGHTS")
+        if raw:
+            user = json.loads(raw)
+            for k in weights:
+                if k in user:
+                    weights[k] = float(user[k])
+    except Exception:
+        pass
+    total = sum(weights.values()) or 1.0
+    return {k: v / total for k, v in weights.items()}
+
+
 def total_score(vector: float, dna: float, keyword: float,
-                claim: float, ipc: float, ai_risk: Optional[float] = None) -> float:
+                claim: float, ipc: float, ai_risk: Optional[float] = None,
+                weights: Optional[dict] = None) -> float:
     """가중합 종합 유사도 (0~100). ai_risk 미산출 시 나머지 평균으로 보정."""
     if ai_risk is None:
         ai_risk = (vector + dna + keyword + claim) / 4
-    score = (vector * TOTAL_WEIGHTS["vector"] + dna * TOTAL_WEIGHTS["dna"]
-             + keyword * TOTAL_WEIGHTS["keyword"] + claim * TOTAL_WEIGHTS["claim"]
-             + ipc * TOTAL_WEIGHTS["ipc"] + ai_risk * TOTAL_WEIGHTS["ai_risk"])
+    w = weights or TOTAL_WEIGHTS
+    score = (vector * w["vector"] + dna * w["dna"]
+             + keyword * w["keyword"] + claim * w["claim"]
+             + ipc * w["ipc"] + ai_risk * w["ai_risk"])
     return round(min(score, 100), 1)
 
 
@@ -220,6 +243,7 @@ def score_patents(idea: dict, patents: List[dict],
     c_scores = claim_scores(idea_text,
                             [p.get("representative_claim", "") for p in patents])
     idea_groups = expansion.get("technology_groups") or ["기타"]
+    weights = load_weights()
 
     results = []
     for i, p in enumerate(patents):
@@ -230,7 +254,8 @@ def score_patents(idea: dict, patents: List[dict],
         i_score = ipc_score(idea_groups, p.get("ipc", ""))
         v_score = v_scores[i] if i < len(v_scores) else 0.0
         cl_score = c_scores[i] if i < len(c_scores) else 0.0
-        t_score = total_score(v_score, d_score, k_score, cl_score, i_score)
+        t_score = total_score(v_score, d_score, k_score, cl_score, i_score,
+                              weights=weights)
 
         p.update({
             "vector_score": v_score,

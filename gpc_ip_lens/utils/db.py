@@ -205,6 +205,109 @@ def save_search_result(idea_id: int, patent_id: int, scores: dict) -> int:
         conn.close()
 
 
+BOOKMARK_SCHEMA = """
+CREATE TABLE IF NOT EXISTS bookmarks (
+    application_no TEXT PRIMARY KEY,
+    title TEXT,
+    applicant TEXT,
+    note TEXT,
+    created_at TEXT
+);
+"""
+
+
+def _ensure_bookmarks(conn):
+    conn.executescript(BOOKMARK_SCHEMA)
+
+
+# --------------------------------------------------------------- bookmarks
+def add_bookmark(application_no: str, title: str = "", applicant: str = "",
+                 note: str = "") -> None:
+    conn = get_connection()
+    try:
+        _ensure_bookmarks(conn)
+        conn.execute(
+            "INSERT INTO bookmarks(application_no, title, applicant, note,"
+            " created_at) VALUES(?,?,?,?,?) ON CONFLICT(application_no) "
+            "DO UPDATE SET note=excluded.note",
+            (application_no, title, applicant, note,
+             datetime.now().isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def remove_bookmark(application_no: str) -> None:
+    conn = get_connection()
+    try:
+        _ensure_bookmarks(conn)
+        conn.execute("DELETE FROM bookmarks WHERE application_no = ?",
+                     (application_no,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def is_bookmarked(application_no: str) -> bool:
+    conn = get_connection()
+    try:
+        _ensure_bookmarks(conn)
+        row = conn.execute(
+            "SELECT 1 FROM bookmarks WHERE application_no = ?",
+            (application_no,)).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def list_bookmarks() -> list:
+    """북마크된 특허를 patents 테이블과 조인해 전체 정보로 반환."""
+    conn = get_connection()
+    try:
+        _ensure_bookmarks(conn)
+        rows = conn.execute(
+            "SELECT b.application_no, b.note, b.created_at, p.* "
+            "FROM bookmarks b LEFT JOIN patents p "
+            "ON b.application_no = p.application_no "
+            "ORDER BY b.created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------------- 검색 이력
+def list_ideas(limit: int = 30) -> list:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT i.id, i.title, i.description, i.keywords,"
+            " i.exclude_keywords, i.idea_dna_json, i.created_at,"
+            " COUNT(s.id) AS n_results "
+            "FROM ideas i LEFT JOIN search_results s ON s.idea_id = i.id "
+            "GROUP BY i.id ORDER BY i.created_at DESC LIMIT ?",
+            (limit,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def load_idea_results(idea_id: int) -> list:
+    """과거 검색 결과를 patents + search_results 조인으로 복원."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT p.*, s.vector_score, s.keyword_score, s.dna_score,"
+            " s.claim_score, s.ipc_score, s.ai_risk_score, s.total_score,"
+            " s.matched_keywords, s.technology_group, s.patent_dna_json,"
+            " s.search_query "
+            "FROM search_results s JOIN patents p ON p.id = s.patent_id "
+            "WHERE s.idea_id = ? ORDER BY s.total_score DESC",
+            (idea_id,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def save_drawing(patent_id: int, image_path: str, caption: str) -> int:
     conn = get_connection()
     try:
