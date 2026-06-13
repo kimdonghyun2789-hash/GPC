@@ -183,7 +183,7 @@ def render_patent_detail(p: dict, idea_dna: dict):
             ui.status_badge(p.get("status", "-")),
             ui.group_badge(p.get("technology_group", "기타")),
             ui.grade_badge(p.get("grade", sim_mod.grade(score))),
-            f"<span class='gpc-badge' style='background:#EAF1FA;color:#2D5BA0'>"
+            f"<span class='gpc-badge' style='background:#E9F1FE;color:#1565E0'>"
             f"유사도 {score:.0f}</span>",
         ])
         st.markdown(f"<div style='margin:2px 0 10px'>{badges}</div>",

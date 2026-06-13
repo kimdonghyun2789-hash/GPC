@@ -53,8 +53,8 @@ def _register_font() -> str:
 
 
 def _styles(font: str) -> dict:
-    navy = colors.HexColor("#16335B")
-    blue = colors.HexColor("#2D5BA0")
+    navy = colors.HexColor("#0D1B3D")
+    blue = colors.HexColor("#1565E0")
     return {
         "title": ParagraphStyle("title", fontName=font, fontSize=18,
                                 leading=24, spaceAfter=8, textColor=navy),
@@ -80,12 +80,12 @@ def _table(data: List[List[str]], font: str, col_widths=None) -> Table:
     table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, -1), font),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a3e6e")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0D1B3D")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#bbbbbb")),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E4E8F0")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-         [colors.white, colors.HexColor("#f3f6fa")]),
+         [colors.white, colors.HexColor("#F1F3F7")]),
     ]))
     return table
 
@@ -117,9 +117,12 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
     story = []
 
     # 표지/헤더
-    story.append(Paragraph("IP<super rise=10 size=24>3</super>",
-                           st["cover_logo"]))
-    story.append(Paragraph("IP³ Patent Review Report", st["cover_title"]))
+    story.append(Paragraph(
+        'iP<super rise=10 size=24><font color="#1565E0">3</font></super>',
+        st["cover_logo"]))
+    story.append(Paragraph(
+        'iP<super rise=6 size=11><font color="#1565E0">3</font></super>'
+        ' Patent Review Report', st["cover_title"]))
     story.append(Paragraph("Intellectual Property", st["cover_line"]))
     story.append(Paragraph("Idea to Patent", st["cover_line"]))
     story.append(Paragraph("Intelligence Platform", st["cover_line"]))
