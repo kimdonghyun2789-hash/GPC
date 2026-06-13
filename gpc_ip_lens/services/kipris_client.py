@@ -13,6 +13,7 @@ KIPRISPlus 참고:
       ?word={검색어}&ServiceKey={KIPRIS_API_KEY}
 - 응답은 XML 이며 item 단위로 출원번호/발명의명칭/출원인/요약 등이 온다.
 """
+import xml.etree.ElementTree as ET
 from typing import List, Optional
 
 import pandas as pd
@@ -20,6 +21,27 @@ import requests
 
 from utils import cache_utils, config
 from utils.text_utils import tokenize, split_keywords
+
+
+def _xml_first(item, names):
+    """item 하위에서 후보 태그명 중 처음 발견되는 텍스트를 반환.
+
+    KIPRISPlus 응답은 서비스/버전에 따라 태그명이 조금씩 다르므로
+    여러 후보를 순서대로 시도한다.
+    """
+    for n in names:
+        el = item.find(n)
+        if el is not None and (el.text or "").strip():
+            return el.text.strip()
+    return ""
+
+
+def _fmt_date(raw: str) -> str:
+    """KIPRIS 날짜(YYYYMMDD) → YYYY-MM-DD. 형식이 다르면 원문 유지."""
+    d = "".join(ch for ch in str(raw) if ch.isdigit())
+    if len(d) == 8:
+        return f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+    return str(raw or "")
 
 # mock/실제 공통으로 사용하는 특허 레코드 필드
 PATENT_FIELDS = [
@@ -89,72 +111,125 @@ class RealKiprisAdapter:
     입력하고 USE_MOCK_DATA=false 로 바꾸면 이 어댑터가 사용된다.
     """
 
+    # KIPRISPlus 특허·실용신안 서비스 오퍼레이션 (필요 시 BASE_URL 뒤 경로만 수정)
+    SEARCH_OP = "/patUtiModInfoSearchSevice/getWordSearch"
+    DETAIL_OP = "/patUtiModInfoSearchSevice/getBibliographyDetailInfoSearch"
+    DRAWING_OP = "/patUtiModInfoSearchSevice/getRepresentativeDrawingInfo"
+
     def __init__(self):
         self.base_url = config.get_kipris_base_url().rstrip("/")
         self.api_key = config.get_kipris_api_key()
 
-    def search(self, query: str, max_results: int = 30) -> List[dict]:
-        """특허 검색.
+    def _call(self, op: str, params: dict) -> ET.Element:
+        """오퍼레이션 호출 후 XML 루트 반환."""
+        url = f"{self.base_url}{op}"
+        p = dict(params)
+        p["ServiceKey"] = self.api_key
+        resp = requests.get(url, params=p, timeout=20)
+        resp.raise_for_status()
+        return ET.fromstring(resp.text)
 
-        TODO(실연동): KIPRISPlus '특허/실용신안 검색' API 호출.
-        예시 (자유검색):
-            GET {base_url}/patUtiModInfoSearchSevice/getWordSearch
-            params: word=query, numOfRows=max_results, ServiceKey=api_key
-        응답 XML 의 <item> 들을 PATENT_FIELDS 형태의 dict 로 매핑해서
-        리스트로 반환해야 한다. (XML 파싱: xml.etree.ElementTree 사용 권장)
+    @staticmethod
+    def _kipris_url(app_no: str) -> str:
+        digits = "".join(ch for ch in str(app_no) if ch.isdigit())
+        return (f"http://kpat.kipris.or.kr/kpat/biblioa.do?applno={digits}"
+                if digits else "")
+
+    def _parse_item(self, item: ET.Element) -> dict:
+        """KIPRIS <item> → PATENT_FIELDS dict (태그명 변형에 관대하게)."""
+        app_no = _xml_first(item, ["applicationNumber", "ApplicationNumber",
+                                   "appReferenceNumber"])
+        return {
+            "application_no": app_no,
+            "publication_no": _xml_first(item, ["openNumber", "publicationNumber",
+                                                "publicationNo"]),
+            "registration_no": _xml_first(item, ["registerNumber",
+                                                 "registrationNumber"]),
+            "title": _xml_first(item, ["inventionTitle", "InventionName",
+                                       "title", "astrtContTitle"]),
+            "applicant": _xml_first(item, ["applicantName", "ApplicantName",
+                                           "applicant"]),
+            "application_date": _fmt_date(_xml_first(
+                item, ["applicationDate", "ApplicationDate"])),
+            "publication_date": _fmt_date(_xml_first(
+                item, ["openDate", "publicationDate", "PublicationDate"])),
+            "registration_date": _fmt_date(_xml_first(
+                item, ["registerDate", "registrationDate"])),
+            "status": _xml_first(item, ["registerStatus", "applicationStatus",
+                                        "registerStatusName"]),
+            "abstract": _xml_first(item, ["astrtCont", "abstractContent",
+                                          "abstract"]),
+            "representative_claim": _xml_first(item, ["claimScope", "claim",
+                                                      "claimContent"]),
+            "ipc": _xml_first(item, ["ipcNumber", "ipcCode", "ipc"]),
+            "cpc": _xml_first(item, ["cpcNumber", "cpcCode", "cpc"]),
+            "drawing_url": _xml_first(item, ["bigDrawing", "drawing",
+                                             "imagePath", "drawingPath"]),
+            "kipris_url": self._kipris_url(app_no),
+            "technology_group": "",
+        }
+
+    def search(self, query: str, max_results: int = 30) -> List[dict]:
+        """KIPRISPlus 자유검색. 응답 XML 의 <item> 을 PATENT_FIELDS 로 매핑.
+
+        주: 실제 응답에서 태그명이 다르면 _parse_item 의 후보 목록만 보완하면
+        된다. (응답 샘플 XML 을 한 번 확인하면 정확히 고정 가능)
         """
         cache_key = f"kipris_search::{query}::{max_results}"
         cached = cache_utils.cache_get(cache_key)
         if cached is not None:
             return cached
         try:
-            url = f"{self.base_url}/patUtiModInfoSearchSevice/getWordSearch"
-            resp = requests.get(
-                url,
-                params={"word": query, "numOfRows": max_results,
-                        "ServiceKey": self.api_key},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            # TODO(실연동): resp.text(XML) 을 파싱하여 results 리스트 구성
-            # import xml.etree.ElementTree as ET
-            # root = ET.fromstring(resp.text)
-            # for item in root.iter("item"): ...
-            results: List[dict] = []
-            cache_utils.cache_set(cache_key, results)
-            return results
-        except requests.RequestException as exc:
+            root = self._call(self.SEARCH_OP, {
+                "word": query, "numOfRows": max_results, "pageNo": 1,
+                "patent": "true", "utility": "true"})
+        except (requests.RequestException, ET.ParseError) as exc:
             raise RuntimeError(f"KIPRIS API 호출 실패: {exc}") from exc
 
-    def get_detail(self, application_no: str) -> Optional[dict]:
-        """특허 상세정보 조회 (사용자가 클릭할 때만 호출, 결과는 캐싱).
+        results = []
+        for item in root.iter("item"):
+            rec = self._parse_item(item)
+            if rec["application_no"] or rec["title"]:
+                results.append(rec)
+        cache_utils.cache_set(cache_key, results)
+        return results
 
-        TODO(실연동): '서지상세정보' API 호출.
-        예시:
-            GET {base_url}/patUtiModInfoSearchSevice/getBibliographyDetailInfoSearch
-            params: applicationNumber=application_no, ServiceKey=api_key
-        """
+    def get_detail(self, application_no: str) -> Optional[dict]:
+        """서지상세정보 조회 (클릭 시 호출, 결과 캐싱)."""
         cache_key = f"kipris_detail::{application_no}"
         cached = cache_utils.cache_get(cache_key)
         if cached is not None:
             return cached
-        # TODO(실연동): 실제 호출 및 파싱 구현 후 cache_utils.cache_set 호출
-        return None
+        try:
+            root = self._call(self.DETAIL_OP,
+                              {"applicationNumber": application_no})
+        except (requests.RequestException, ET.ParseError):
+            return None
+        item = next(root.iter("item"), None)
+        detail = self._parse_item(item) if item is not None else None
+        if detail:
+            cache_utils.cache_set(cache_key, detail)
+        return detail
 
     def get_drawing_url(self, application_no: str) -> Optional[str]:
-        """대표도면 URL 조회 (클릭 시 호출, 캐싱).
-
-        TODO(실연동): '대표도면' API 호출.
-        예시:
-            GET {base_url}/patUtiModInfoSearchSevice/getRepresentativeDrawing
-            params: applicationNumber=application_no, ServiceKey=api_key
-        """
+        """대표도면 URL 조회 (클릭 시 호출, 캐싱)."""
         cache_key = f"kipris_drawing::{application_no}"
         cached = cache_utils.cache_get(cache_key)
         if cached is not None:
             return cached or None
-        # TODO(실연동): 실제 호출 구현
-        return None
+        try:
+            root = self._call(self.DRAWING_OP,
+                              {"applicationNumber": application_no})
+        except (requests.RequestException, ET.ParseError):
+            return None
+        url = _xml_first(root, ["path", "drawing", "bigDrawing", "imagePath"])
+        if not url:
+            item = next(root.iter("item"), None)
+            if item is not None:
+                url = _xml_first(item, ["path", "drawing", "bigDrawing",
+                                        "imagePath"])
+        cache_utils.cache_set(cache_key, url or "")
+        return url or None
 
 
 class KiprisClient:
