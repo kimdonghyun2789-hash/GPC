@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 검색어 확장 (Gemini + fallback)."""
+"""IP³ (IP Cube) - 검색어 확장 (Gemini + fallback)."""
 from typing import List
 
 from services import gemini_service

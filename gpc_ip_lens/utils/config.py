@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 설정/경로 관리 모듈.
+"""IP³ (IP Cube) - 설정/경로 관리 모듈.
 
 - .env 파일과 SQLite settings 테이블 양쪽에서 설정을 읽는다.
 - Settings 화면에서 저장한 값(DB)이 .env 값보다 우선한다.

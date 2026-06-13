@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 기술군 분류기 (키워드 규칙 + IPC 보정)."""
+"""IP³ (IP Cube) - 기술군 분류기 (키워드 규칙 + IPC 보정)."""
 from typing import List
 
 TECH_GROUPS = [

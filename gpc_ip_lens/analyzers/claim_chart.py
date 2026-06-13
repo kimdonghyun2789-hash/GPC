@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 청구항 대비표 (Claim Chart).
+"""IP³ (IP Cube) - 청구항 대비표 (Claim Chart).
 
 핵심 특허의 대표청구항을 구성요소(element) 단위로 분해하고, 각 구성요소가
 내 아이디어에 대응되는지(일치/부분/차이)를 비교한다. 변리사·출원 검토의

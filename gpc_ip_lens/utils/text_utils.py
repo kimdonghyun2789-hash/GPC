@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 한국어/영문 혼합 특허 텍스트 처리 유틸."""
+"""IP³ (IP Cube) - 한국어/영문 혼합 특허 텍스트 처리 유틸."""
 import re
 from collections import Counter
 from typing import Iterable, List

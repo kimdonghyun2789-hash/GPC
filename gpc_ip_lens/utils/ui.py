@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - UI 디자인 시스템 (professional SaaS).
+"""IP³ (IP Cube) - UI 디자인 시스템 (professional SaaS).
 
 전문 분석 제품 느낌: 깔끔한 산세리프, 일관된 컴포넌트, 넘침 방지.
 - inject_theme(): 전역 CSS (main() 최상단 1회)
@@ -200,6 +200,21 @@ section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-chil
 .gpc-card .ct {{ font-size:.68rem; color:var(--faint); font-weight:700;
   letter-spacing:.08em; text-transform:uppercase; margin-bottom:.45rem; }}
 .gpc-card .cv {{ font-size:.88rem; color:var(--ink); line-height:1.6; }}
+
+/* ---------- IP³ 로고 / 상단 헤더 ---------- */
+.ip3-word {{ font-weight:800; letter-spacing:-.02em; color:var(--ink);
+  font-family:{SANS}; white-space:nowrap; }}
+.ip3-word sup {{ font-size:.52em; font-weight:800; color:var(--primary);
+  vertical-align:super; margin-left:1px; }}
+.ip3-topbar {{ display:flex; align-items:center; gap:16px;
+  padding:.1rem .1rem 1rem; margin-bottom:1.4rem;
+  border-bottom:1px solid var(--border); }}
+.ip3-topbar .logo {{ font-size:1.7rem; line-height:1; }}
+.ip3-topbar .tag {{ font-size:.82rem; color:var(--muted); line-height:1.35;
+  border-left:2px solid var(--border); padding-left:14px; }}
+.ip3-topbar .tag b {{ color:var(--primary); font-weight:600; }}
+.gpc-brand {{ display:block; }}
+.gpc-brand .bw {{ font-size:1.55rem; }}
 </style>
         """,
         unsafe_allow_html=True,
@@ -208,9 +223,20 @@ section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-chil
 
 def sidebar_brand() -> None:
     st.markdown(
-        '<div class="gpc-brand"><div class="mark">G</div>'
-        '<div><div class="w">GPC IP Lens</div>'
-        '<div class="k">Patent Intelligence</div></div></div>',
+        '<div class="gpc-brand">'
+        '<div class="ip3-word bw">IP<sup>3</sup></div>'
+        '<div class="k">IP Cube · Patent Intelligence</div></div>',
+        unsafe_allow_html=True)
+
+
+def app_header() -> None:
+    """메인 영역 상단 브랜드 헤더 (IP³ + 태그라인)."""
+    st.markdown(
+        '<div class="ip3-topbar">'
+        '<div class="logo ip3-word">IP<sup>3</sup></div>'
+        '<div class="tag"><b>Intellectual Property</b> · '
+        '<b>Idea to Patent</b> · <b>Intelligence Platform</b></div>'
+        '</div>',
         unsafe_allow_html=True)
 
 

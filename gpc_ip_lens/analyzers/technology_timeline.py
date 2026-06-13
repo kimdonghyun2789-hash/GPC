@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 기술발전도(Technology Timeline) 생성."""
+"""IP³ (IP Cube) - 기술발전도(Technology Timeline) 생성."""
 from typing import List
 
 import pandas as pd

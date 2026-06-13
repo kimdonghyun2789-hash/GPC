@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 특허 DNA 추출 및 비교."""
+"""IP³ (IP Cube) - 특허 DNA 추출 및 비교."""
 from typing import List
 
 from services import gemini_service

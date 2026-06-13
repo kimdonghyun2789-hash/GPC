@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - PyInstaller 빌드 스크립트.
+"""IP³ (IP Cube) - PyInstaller 빌드 스크립트.
 
 사용법:
     python build_exe.py            # 권장: onedir 빌드

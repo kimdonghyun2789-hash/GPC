@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - exe 실행용 런처.
+"""IP³ (IP Cube) - exe 실행용 런처.
 
 동작:
 1. 로컬 Streamlit 서버를 현재 프로세스에서 기동 (PyInstaller 호환 방식)
@@ -7,7 +7,7 @@
 3. 콘솔 창을 닫거나 Ctrl+C 를 누르면 서버도 함께 종료된다
 
 개발 모드:  python launcher.py   (또는 streamlit run app.py)
-배포 모드:  GPC_IP_Lens.exe 더블클릭
+배포 모드:  실행파일 더블클릭
 """
 import os
 import socket
@@ -65,7 +65,7 @@ def main() -> None:
     app_dir = base_dir()
     app_path = app_dir / "app.py"
     if not app_path.exists():
-        print(f"[GPC IP Lens] app.py 를 찾을 수 없습니다: {app_path}")
+        print(f"[IP3] app.py 를 찾을 수 없습니다: {app_path}")
         input("Enter 를 누르면 종료합니다...")
         sys.exit(1)
 
@@ -75,7 +75,7 @@ def main() -> None:
 
     port = find_free_port(PORT)
     print("=" * 56)
-    print("  GPC IP Lens - 건설/PC 특화 특허 탐색·분석")
+    print("  IP3 (IP Cube) - Idea to Patent Intelligence Platform")
     print(f"  http://localhost:{port}  (브라우저가 자동으로 열립니다)")
     print("  종료: 이 창을 닫거나 Ctrl+C")
     print("=" * 56)
@@ -96,7 +96,7 @@ def main() -> None:
     try:
         sys.exit(stcli.main())
     except KeyboardInterrupt:
-        print("\n[GPC IP Lens] 서버를 종료합니다.")
+        print("\n[IP3] 서버를 종료합니다.")
 
 
 if __name__ == "__main__":

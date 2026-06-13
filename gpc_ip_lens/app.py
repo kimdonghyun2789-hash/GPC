@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 건설/PC 특화 특허 탐색·분석 프로그램 (Streamlit 메인 앱).
+"""IP³ (IP Cube) - 건설/PC 특화 특허 탐색·분석 프로그램 (Streamlit 메인 앱).
 
 실행: streamlit run app.py
 """
@@ -27,7 +27,7 @@ from services.kipris_client import KiprisClient
 from utils import cache_utils, config, db, ui
 from utils.text_utils import split_keywords
 
-st.set_page_config(page_title="GPC IP Lens", page_icon="◆", layout="wide",
+st.set_page_config(page_title="IP³ · IP Cube", page_icon="◼", layout="wide",
                    initial_sidebar_state="expanded")
 ui.inject_theme()
 
@@ -116,7 +116,7 @@ def placeholder_drawing(patent: dict) -> bytes:
     off = seed % 30
     d.line([60 + off, 270, 360 - off, 270], fill="#9aa7b5", width=1)
     d.text((20, 18), f"No. {app_no}", fill="#33475e")
-    d.text((20, 272), "GPC IP Lens - representative drawing (mock)",
+    d.text((20, 272), "IP3 (IP Cube) - representative drawing (mock)",
            fill="#9aa7b5")
 
     buf = io.BytesIO()
@@ -1091,6 +1091,7 @@ def main():
             c1.metric("검색 결과", f"{len(df)}")
             c2.metric("최고 유사도", f"{df['total_score'].max():.0f}")
 
+    ui.app_header()
     pages = {
         "Idea Canvas": page_idea_canvas, "Patent Radar": page_patent_radar,
         "Patent DNA": page_patent_dna, "Landscape": page_landscape,

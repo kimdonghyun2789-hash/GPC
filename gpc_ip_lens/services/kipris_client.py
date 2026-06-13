@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - KIPRISPlus API 클라이언트 (Adapter 구조).
+"""IP³ (IP Cube) - KIPRISPlus API 클라이언트 (Adapter 구조).
 
 현재는 mock 모드(sample_patents.csv)로 동작한다.
 실제 KIPRISPlus Open API 연동 시 RealKiprisAdapter 의 TODO 부분에

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - PDF 리포트 (reportlab).
+"""IP³ (IP Cube) - PDF 리포트 (reportlab).
 
 한국어 출력을 위해 reportlab 내장 CID 폰트(HYSMyeongJo-Medium)를 사용한다.
 별도 폰트 파일 없이 한글이 표시된다.
@@ -53,16 +53,25 @@ def _register_font() -> str:
 
 
 def _styles(font: str) -> dict:
+    navy = colors.HexColor("#16335B")
+    blue = colors.HexColor("#2D5BA0")
     return {
         "title": ParagraphStyle("title", fontName=font, fontSize=18,
-                                leading=24, spaceAfter=8),
+                                leading=24, spaceAfter=8, textColor=navy),
         "h2": ParagraphStyle("h2", fontName=font, fontSize=13, leading=18,
-                             spaceBefore=12, spaceAfter=6,
-                             textColor=colors.HexColor("#1a3e6e")),
+                             spaceBefore=12, spaceAfter=6, textColor=navy),
         "body": ParagraphStyle("body", fontName=font, fontSize=9.5,
                                leading=14),
         "small": ParagraphStyle("small", fontName=font, fontSize=8,
                                 leading=11, textColor=colors.grey),
+        # 표지 전용
+        "cover_logo": ParagraphStyle("cover_logo", fontName=font, fontSize=46,
+                                     leading=50, textColor=navy, spaceAfter=2),
+        "cover_title": ParagraphStyle("cover_title", fontName=font,
+                                      fontSize=17, leading=22, textColor=blue,
+                                      spaceBefore=4, spaceAfter=20),
+        "cover_line": ParagraphStyle("cover_line", fontName=font, fontSize=13,
+                                     leading=20, textColor=navy),
     }
 
 
@@ -108,10 +117,16 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
     story = []
 
     # 표지/헤더
-    story.append(Paragraph("GPC IP Lens — 특허 탐색·분석 리포트", st["title"]))
+    story.append(Paragraph("IP<super rise=10 size=24>3</super>",
+                           st["cover_logo"]))
+    story.append(Paragraph("IP³ Patent Review Report", st["cover_title"]))
+    story.append(Paragraph("Intellectual Property", st["cover_line"]))
+    story.append(Paragraph("Idea to Patent", st["cover_line"]))
+    story.append(Paragraph("Intelligence Platform", st["cover_line"]))
+    story.append(Spacer(1, 10))
     story.append(Paragraph(
         f"생성일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}", st["small"]))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 8))
 
     # 1. 아이디어 개요
     story.append(Paragraph("1. 아이디어 개요", st["h2"]))

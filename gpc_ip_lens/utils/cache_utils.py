@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 파일 기반 JSON 캐시 (KIPRIS 상세정보/도면 캐싱용)."""
+"""IP³ (IP Cube) - 파일 기반 JSON 캐시 (KIPRIS 상세정보/도면 캐싱용)."""
 import hashlib
 import json
 from pathlib import Path

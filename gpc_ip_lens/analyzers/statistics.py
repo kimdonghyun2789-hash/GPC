@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 통계 생성 모듈 (Tech Landscape / Strategy Board 공용)."""
+"""IP³ (IP Cube) - 통계 생성 모듈 (Tech Landscape / Strategy Board 공용)."""
 from typing import List
 
 import pandas as pd

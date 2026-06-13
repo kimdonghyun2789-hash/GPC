@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - AI 1차 특허 검토 (Gemini + fallback).
+"""IP³ (IP Cube) - AI 1차 특허 검토 (Gemini + fallback).
 
 주의: 출력은 참고 의견이며 최종 법률 판단이 아니다. '출원 가능' 같은
 단정 표현을 쓰지 않고 '검토 가능성 있음 / 변리사 검토 필요'로 표현한다.

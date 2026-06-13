@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - Gemini API 서비스 래퍼.
+"""IP³ (IP Cube) - Gemini API 서비스 래퍼.
 
 모든 함수는 실패 시 None 을 반환한다. 호출부는 None 이면 fallback 로직을
 사용해야 한다. API Key 는 utils.config 를 통해서만 읽는다 (하드코딩 금지).

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - Excel 내보내기 (openpyxl 엔진).
+"""IP³ (IP Cube) - Excel 내보내기 (openpyxl 엔진).
 
 시트 구성: Search Results / Similarity Scores / Patent DNA / Statistics /
 Technology Groups / AI Review
@@ -123,7 +123,7 @@ def export_excel(results_df: pd.DataFrame, idea: dict,
             {"항목": "아이디어 설명", "내용": idea.get("description", "")},
             {"항목": "핵심 키워드", "내용": idea.get("keywords", "")},
             {"항목": "생성일시", "내용": datetime.now().strftime("%Y-%m-%d %H:%M")},
-            {"항목": "프로그램", "내용": "GPC IP Lens"},
+            {"항목": "프로그램", "내용": "IP³ (IP Cube)"},
         ])
         meta.to_excel(writer, sheet_name="Info", index=False)
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - SQLite 데이터베이스 모듈."""
+"""IP³ (IP Cube) - SQLite 데이터베이스 모듈."""
 import json
 import sqlite3
 from datetime import datetime

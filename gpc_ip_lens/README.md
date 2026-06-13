@@ -1,8 +1,11 @@
-# GPC IP Lens
+# IP³ (IP Cube)
+
+**Intellectual Property · Idea to Patent · Intelligence Platform**
 
 아이디어를 입력하면 **Gemini API** 와 **KIPRISPlus** 데이터를 기반으로
 유사특허, 대표도면, 통계, 기술발전도, 시간축 네트워크맵, AI 1차 검토 결과를
-제공하는 **GPC 내부용 건설/PC 특화 특허 탐색·분석 프로그램**입니다.
+제공하는 **GPC 내부용 건설/PC 특화 특허 탐색·분석 플랫폼**입니다.
+(프로그램명: IP³, 읽는 명칭: IP Cube)
 
 단순 특허 검색기가 아니라, 검색 결과를 건설/PC 기술 관점(접합부·전단키·
 생산방법·몰드·배수·방수·품질관리·유지관리·센서·시공장비)으로 재가공하여

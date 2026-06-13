@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - 시간축 네트워크맵 (Plotly + networkx).
+"""IP³ (IP Cube) - 시간축 네트워크맵 (Plotly + networkx).
 
 배치 원칙:
 - X축 = 출원연도, Y축 = 기술군
