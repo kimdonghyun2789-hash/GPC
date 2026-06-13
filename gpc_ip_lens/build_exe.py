@@ -33,6 +33,7 @@ DATAS = [
     ("utils", "utils"),
     ("data/sample_patents.csv", "data"),
     (".env.example", "."),
+    (".streamlit/config.toml", ".streamlit"),
 ]
 
 COLLECT_ALL = ["streamlit", "plotly", "altair", "pandas", "sklearn",
@@ -86,6 +87,10 @@ def build(onefile: bool = False) -> None:
             env_example = HERE / ".env.example"
             if env_example.exists():
                 shutil.copy2(env_example, dist / ".env.example")
+            cfg = HERE / ".streamlit" / "config.toml"
+            if cfg.exists():
+                (dist / ".streamlit").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(cfg, dist / ".streamlit" / "config.toml")
         print(f"\n빌드 완료: {dist / (APP_NAME + '.exe')}")
     else:
         print(f"\n빌드 완료: {HERE / 'dist' / (APP_NAME + '.exe')}")

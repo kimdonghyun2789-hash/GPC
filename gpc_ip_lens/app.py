@@ -23,10 +23,12 @@ from analyzers.classifier import TECH_GROUPS
 from exporters import excel_exporter, image_exporter, pdf_exporter
 from services import gemini_service
 from services.kipris_client import KiprisClient
-from utils import cache_utils, config, db
+from utils import cache_utils, config, db, ui
 from utils.text_utils import split_keywords
 
-st.set_page_config(page_title="GPC IP Lens", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="GPC IP Lens", page_icon="🔍", layout="wide",
+                   initial_sidebar_state="expanded")
+ui.inject_theme()
 
 try:
     db.init_db()
@@ -34,10 +36,11 @@ except Exception as exc:  # DB 오류 시 사용자 안내
     st.error(f"데이터베이스 초기화 오류: {exc}. db 폴더 권한을 확인하세요.")
 
 MENU = [
-    "1. Idea Canvas", "2. Patent Radar", "3. Patent DNA", "4. Tech Landscape",
-    "5. Technology Timeline", "6. Time Network Map", "7. Drawing Intelligence",
-    "8. AI Patent Review", "9. Strategy Board", "10. Export Center",
-    "11. Settings",
+    "💡 Idea Canvas", "📡 Patent Radar", "🧬 Patent DNA",
+    "📊 Tech Landscape", "📈 Technology Timeline",
+    "🕸️ Time Network Map", "🖼️ Drawing Intelligence",
+    "🤖 AI Patent Review", "♟️ Strategy Board",
+    "📤 Export Center", "⚙️ Settings",
 ]
 
 DEMO_IDEA = {
@@ -176,6 +179,16 @@ def render_patent_detail(p: dict, idea_dna: dict):
                  use_container_width=True)
     with col_info:
         st.markdown(f"#### {p.get('title','')}")
+        score = p.get("total_score", 0)
+        badges = " ".join([
+            ui.status_badge(p.get("status", "-")),
+            ui.group_badge(p.get("technology_group", "기타")),
+            ui.grade_badge(p.get("grade", sim_mod.grade(score))),
+            f"<span class='gpc-badge' style='background:#EAF1FC;color:#2E6FE0'>"
+            f"유사도 {score:.0f}</span>",
+        ])
+        st.markdown(f"<div style='margin:2px 0 10px'>{badges}</div>",
+                    unsafe_allow_html=True)
         st.markdown(
             f"- **출원번호**: {p.get('application_no','-')} | "
             f"**출원일**: {p.get('application_date','-')}\n"
@@ -183,15 +196,11 @@ def render_patent_detail(p: dict, idea_dna: dict):
             f"{p.get('publication_date','-') or '-'}\n"
             f"- **등록번호/일**: {p.get('registration_no','-') or '-'} / "
             f"{p.get('registration_date','-') or '-'}\n"
-            f"- **출원인**: {p.get('applicant','-')} | "
-            f"**상태**: {p.get('status','-')}\n"
-            f"- **IPC**: {p.get('ipc','-')} | **CPC**: {p.get('cpc','-')}\n"
-            f"- **기술군**: {p.get('technology_group','-')} | "
-            f"**종합 유사도**: {p.get('total_score','-')} "
-            f"({p.get('grade','-')})")
+            f"- **출원인**: {p.get('applicant','-')}\n"
+            f"- **IPC**: {p.get('ipc','-')} | **CPC**: {p.get('cpc','-')}")
         url = p.get("kipris_url") or ""
         if url:
-            st.markdown(f"[KIPRIS 원문 보기]({url})")
+            st.markdown(f"[🔗 KIPRIS 원문 보기]({url})")
     with st.expander("요약", expanded=True):
         st.write(p.get("abstract", "-"))
     with st.expander("대표청구항"):
@@ -276,7 +285,8 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
 
 # ============================================================ 1. Idea Canvas
 def page_idea_canvas():
-    st.subheader("1. Idea Canvas — 아이디어 입력 및 검색")
+    ui.page_header("💡", "Idea Canvas",
+                   "아이디어를 입력하고 검색어를 확장한 뒤 KIPRIS 검색을 실행합니다.")
     if not gemini_service.is_available():
         st.info("Gemini API Key 가 설정되지 않았습니다. 검색어 확장과 AI 분석은 "
                 "**키워드 기반 fallback** 으로 동작합니다. "
@@ -336,18 +346,29 @@ def page_idea_canvas():
     expansion = ss_get("expansion")
     if expansion:
         st.markdown("---")
-        st.markdown(f"##### 검색어 확장 결과 "
-                    f"(`{ss_get('expansion_method', '-')}`)")
+        method = ss_get("expansion_method", "-")
+        st.markdown(f"#### 🔑 검색어 확장 결과 &nbsp;<span style='font-size:.8rem;"
+                    f"color:#64788F'>({method})</span>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
-        c1.markdown("**국문 키워드**\n\n" +
-                    (", ".join(expansion.get("korean_keywords", [])) or "-"))
-        c2.markdown("**영문 키워드**\n\n" +
-                    (", ".join(expansion.get("english_keywords", [])) or "-"))
-        c3.markdown("**동의어 / 제외어**\n\n" +
-                    (", ".join(expansion.get("synonyms", [])) or "-") + "\n\n제외: " +
-                    (", ".join(expansion.get("exclude_keywords", [])) or "-"))
-        st.markdown("**기술군 후보**: " +
-                    (", ".join(expansion.get("technology_groups", [])) or "-"))
+        c1.markdown(ui.info_card(
+            "국문 키워드",
+            ", ".join(expansion.get("korean_keywords", [])) or "-"),
+            unsafe_allow_html=True)
+        c2.markdown(ui.info_card(
+            "영문 키워드",
+            ", ".join(expansion.get("english_keywords", [])) or "-"),
+            unsafe_allow_html=True)
+        c3.markdown(ui.info_card(
+            "동의어 / 제외어",
+            (", ".join(expansion.get("synonyms", [])) or "-")
+            + "<br><span style='color:#64788F'>제외: "
+            + (", ".join(expansion.get("exclude_keywords", [])) or "-")
+            + "</span>"),
+            unsafe_allow_html=True)
+        groups_html = " ".join(ui.group_badge(g)
+                               for g in expansion.get("technology_groups", []))
+        st.markdown(f"<div style='margin-top:10px'><b>기술군 후보</b> &nbsp;"
+                    f"{groups_html or '-'}</div>", unsafe_allow_html=True)
         with st.expander("아이디어 DNA", expanded=False):
             st.json(expansion.get("idea_dna", {}))
 
@@ -373,7 +394,8 @@ def page_idea_canvas():
 
 # ============================================================ 2. Patent Radar
 def page_patent_radar():
-    st.subheader("2. Patent Radar — 유사특허 TOP N + 대표도면")
+    ui.page_header("📡", "Patent Radar",
+                   "유사특허 TOP N 표와 대표도면 갤러리를 한 화면에서 살펴봅니다.")
     df = require_results()
     if df.empty:
         return
@@ -463,7 +485,8 @@ def page_patent_radar():
 
 # ============================================================ 3. Patent DNA
 def page_patent_dna():
-    st.subheader("3. Patent DNA — 아이디어 vs 특허 구조 비교")
+    ui.page_header("🧬", "Patent DNA",
+                   "내 아이디어와 선택한 특허의 구성을 항목별로 비교합니다.")
     df = require_results()
     if df.empty:
         return
@@ -502,7 +525,8 @@ def page_patent_dna():
 
 # ============================================================ 4. Tech Landscape
 def page_tech_landscape():
-    st.subheader("4. Tech Landscape — 통계 시각화")
+    ui.page_header("📊", "Tech Landscape",
+                   "검색 결과를 통계와 그래프로 시각화합니다.")
     df = require_results()
     if df.empty:
         return
@@ -559,7 +583,8 @@ def page_tech_landscape():
 
 # ============================================================ 5. Timeline
 def page_timeline():
-    st.subheader("5. Technology Timeline — 기술발전도")
+    ui.page_header("📈", "Technology Timeline",
+                   "연도별 기술군 추이와 기술발전 흐름을 보여줍니다.")
     df = require_results()
     if df.empty:
         return
@@ -601,7 +626,8 @@ def page_timeline():
 
 # ============================================================ 6. Network Map
 def page_network_map():
-    st.subheader("6. Time Network Map — 시간축 네트워크맵")
+    ui.page_header("🕸️", "Time Network Map",
+                   "X축은 출원연도, Y축은 기술군으로 특허를 배치한 시간축 네트워크맵입니다.")
     df = require_results()
     if df.empty:
         return
@@ -653,7 +679,8 @@ def page_network_map():
 
 # ============================================================ 7. Drawing Intelligence
 def page_drawing_intelligence():
-    st.subheader("7. Drawing Intelligence — 대표도면 중심 검토")
+    ui.page_header("🖼️", "Drawing Intelligence",
+                   "대표도면을 중심으로 특허를 검토합니다. 도면 클릭 시 상세로 이동합니다.")
     df = require_results()
     if df.empty:
         return
@@ -697,7 +724,8 @@ def page_drawing_intelligence():
 
 # ============================================================ 8. AI Review
 def page_ai_review():
-    st.subheader("8. AI Patent Review — 1차 검토 (참고용)")
+    ui.page_header("🤖", "AI Patent Review",
+                   "Gemini 기반 1차 검토 결과입니다. 최종 법률 판단이 아닌 참고용입니다.")
     df = require_results()
     if df.empty:
         return
@@ -747,7 +775,8 @@ def page_ai_review():
 
 # ============================================================ 9. Strategy Board
 def page_strategy_board():
-    st.subheader("9. Strategy Board — R&D 전략 분석")
+    ui.page_header("♟️", "Strategy Board",
+                   "기술 공백·성장성·출원인 전략·생존성을 분석합니다.")
     df = require_results()
     if df.empty:
         return
@@ -794,7 +823,8 @@ def page_strategy_board():
 
 # ============================================================ 10. Export Center
 def page_export_center():
-    st.subheader("10. Export Center — 결과 내보내기")
+    ui.page_header("📤", "Export Center",
+                   "분석 결과를 Excel · PDF · 이미지로 내보냅니다.")
     df = require_results()
     if df.empty:
         return
@@ -861,7 +891,8 @@ def page_export_center():
 
 # ============================================================ 11. Settings
 def page_settings():
-    st.subheader("11. Settings — 환경 설정")
+    ui.page_header("⚙️", "Settings",
+                   "API Key · 데이터 모드 · 데이터베이스/캐시를 관리합니다.")
     st.caption("입력한 키는 로컬 SQLite settings 테이블에만 저장되며 외부로 "
                "전송되지 않습니다. (외부 전송은 Gemini/KIPRIS 호출에 한정)")
 
@@ -920,23 +951,27 @@ def page_settings():
 
 # ============================================================ 메인
 def main():
-    st.markdown(
-        "<h2 style='margin-bottom:0'>🔍 GPC IP Lens</h2>"
-        "<p style='color:#5a6b7f;margin-top:2px'>건설/PC 특화 특허 탐색·분석 "
-        "(내부용) — KIPRISPlus × Gemini</p>",
-        unsafe_allow_html=True)
+    mode = "Mock" if config.use_mock_data() else "KIPRIS"
+    gemini_ok = gemini_service.is_available()
+    ui.app_header(mode, gemini_ok)
 
     with st.sidebar:
-        st.markdown("### GPC IP Lens")
+        st.markdown(
+            '<div class="gpc-side-brand"><div class="b1">🔍 GPC IP Lens</div>'
+            '<div class="b2">특허 탐색 · 분석 워크스페이스</div></div>',
+            unsafe_allow_html=True)
         choice = st.radio("메뉴", MENU, label_visibility="collapsed")
-        st.markdown("---")
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
         df = get_results_df()
         if not df.empty:
-            st.metric("검색 결과", f"{len(df)}건")
-            st.metric("최고 유사도", f"{df['total_score'].max():.0f}점")
-        mode = "Mock" if config.use_mock_data() else "KIPRIS"
-        gem = "Gemini ✅" if gemini_service.is_available() else "Gemini ❌(fallback)"
-        st.caption(f"모드: {mode} · {gem}")
+            c1, c2 = st.columns(2)
+            c1.metric("검색 결과", f"{len(df)}건")
+            c2.metric("최고 유사도", f"{df['total_score'].max():.0f}점")
+        gem_txt = "연결됨" if gemini_ok else "미설정 (fallback)"
+        st.markdown(
+            f'<div class="gpc-side-status">데이터 모드 · <b>{mode}</b><br>'
+            f'Gemini · <b>{gem_txt}</b></div>',
+            unsafe_allow_html=True)
 
     pages = {
         MENU[0]: page_idea_canvas, MENU[1]: page_patent_radar,
