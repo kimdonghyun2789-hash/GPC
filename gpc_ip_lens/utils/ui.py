@@ -13,14 +13,14 @@ import html
 import streamlit as st
 
 # ---------------------------------------------------------------- 팔레트
-PAPER = "#F7F5F0"        # 앱 배경 (웜 페이퍼)
+PAPER = "#F4F6F9"        # 앱 배경 (쿨 라이트)
 SURFACE = "#FFFFFF"
-INK = "#23211C"          # 본문 (웜 블랙)
-MUTED = "#797468"        # 보조 텍스트
-FAINT = "#A8A294"        # 3차 텍스트
-BORDER = "#E8E4DA"       # 웜 보더
-ACCENT = "#BE5B3E"       # 클레이 포인트
-ACCENT_SOFT = "#F1E7E0"  # 선택 배경
+INK = "#1E2A38"          # 본문 (네이비 잉크)
+MUTED = "#647281"        # 보조 텍스트
+FAINT = "#97A2AF"        # 3차 텍스트
+BORDER = "#E2E7EE"       # 쿨 보더
+ACCENT = "#2E4B6B"       # 차분한 네이비 포인트
+ACCENT_SOFT = "#E8EDF4"  # 선택 배경
 
 # 기술군 색 (절제된 카테고리 팔레트 · network_map 공용)
 GROUP_COLORS = {
@@ -30,27 +30,27 @@ GROUP_COLORS = {
     "시공장비": "#5E94A0", "기타": "#A9A294",
 }
 
-# 유사도 등급 (bg, fg) — 무채에 가깝게 절제
+# 유사도 등급 (bg, fg) — 차분한 톤
 GRADE_STYLE = {
-    "고유사/주의": ("#F0E1DB", "#A0492E"),
-    "유사": ("#F2E8DC", "#946529"),
-    "관련 있음": ("#EEEDE1", "#766B30"),
-    "낮음": ("#E9EDE6", "#5C6A4F"),
+    "고유사/주의": ("#F3E0DC", "#A4452F"),
+    "유사": ("#EFE6D8", "#8A6526"),
+    "관련 있음": ("#E7ECEF", "#4D6071"),
+    "낮음": ("#E7EDE7", "#54664E"),
 }
 
 # 특허 상태 (bg, fg)
 STATUS_STYLE = {
-    "등록": ("#E7EDE5", "#52664A"),
-    "공개": ("#E7ECEF", "#4D6071"),
-    "소멸": ("#ECEAE3", "#7C766A"),
-    "거절": ("#F0E1DB", "#A0492E"),
-    "취하": ("#ECEAE3", "#7C766A"),
-    "포기": ("#ECEAE3", "#7C766A"),
+    "등록": ("#E5EDE6", "#4C654D"),
+    "공개": ("#E5ECF4", "#34557E"),
+    "소멸": ("#EAECEF", "#6B7682"),
+    "거절": ("#F3E0DC", "#A4452F"),
+    "취하": ("#EAECEF", "#6B7682"),
+    "포기": ("#EAECEF", "#6B7682"),
 }
 
-SERIF = "Georgia,'Times New Roman','Nanum Myeongjo',serif"
+SERIF = ("Georgia,'Times New Roman','Nanum Myeongjo','Batang',serif")
 SANS = ("-apple-system,'Segoe UI','Pretendard','Malgun Gothic',"
-        "'Apple SD Gothic Neo',sans-serif")
+        "'Nanum Gothic','Apple SD Gothic Neo',sans-serif")
 
 
 def inject_theme() -> None:
@@ -111,7 +111,7 @@ h1,h2,h3,h4 {{ font-family:{SERIF}; letter-spacing:-.01em; color:var(--ink); }}
   background:var(--accent); border:1px solid var(--accent); color:#fff;
 }}
 .stButton > button[kind="primary"]:hover {{
-  background:#A94D33; border-color:#A94D33; color:#fff;
+  background:#243B56; border-color:#243B56; color:#fff;
 }}
 
 /* ---------- 입력 위젯 ---------- */
