@@ -37,10 +37,9 @@ except Exception as exc:  # DB 오류 시 사용자 안내
     st.error(f"데이터베이스 초기화 오류: {exc}. db 폴더 권한을 확인하세요.")
 
 MENU = [
-    "Idea Canvas", "Patent Radar", "Patent DNA", "Tech Landscape",
-    "Technology Timeline", "Time Network Map", "Drawing Intelligence",
-    "AI Patent Review", "Strategy Board", "History", "Export Center",
-    "Settings",
+    "Idea Canvas", "Patent Radar", "Patent DNA", "Landscape",
+    "Drawing Intelligence", "AI Patent Review", "History",
+    "Export Center", "Settings",
 ]
 
 DEMO_IDEA = {
@@ -557,83 +556,48 @@ def page_patent_dna():
             st.caption("Gemini 미사용 — 규칙 기반 구성요소 분해 결과입니다.")
 
 
-# ============================================================ 4. Tech Landscape
-def page_tech_landscape():
-    ui.page_header("Tech Landscape",
-                   "검색 결과를 통계와 그래프로 시각화합니다.")
-    df = require_results()
-    if df.empty:
-        return
-
+# ============================================================ Landscape
+def _lc_trends(df):
     cards = stats.summary_cards(df)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("검색 특허 수", f"{cards['total']}건")
     m2.metric("등록률", f"{cards['registered_rate']}%")
     m3.metric("소멸·거절률", f"{cards['expired_rate']}%")
     m4.metric("최근 3년 증가율", f"{cards['recent_growth']:+.1f}%")
-
-    tab1, tab2, tab3 = st.tabs(["출원 동향", "분포", "키워드·조합"])
-    with tab1:
-        c1, c2 = st.columns(2)
-        yearly = stats.yearly_counts(df)
-        c1.plotly_chart(px.line(yearly, x="연도", y="건수", markers=True,
-                                title="연도별 출원 추이"),
-                        use_container_width=True)
-        gg = stats.group_growth(df)
-        c2.plotly_chart(
-            px.bar(gg, x="기술군", y="성장지수", color="성장지수",
-                   color_continuous_scale="RdYlGn",
-                   title="기술군별 온도맵 (최근 3년 성장지수)"),
-            use_container_width=True)
-    with tab2:
-        c1, c2 = st.columns(2)
-        c1.plotly_chart(px.bar(stats.applicant_top(df), x="건수", y="출원인",
-                               orientation="h", title="출원인 TOP 10"),
-                        use_container_width=True)
-        c2.plotly_chart(px.pie(stats.status_counts(df), names="상태",
-                               values="건수", title="상태별 분포"),
-                        use_container_width=True)
-        c3, c4 = st.columns(2)
-        ipc_df = stats.ipc_counts(df)
-        ipc_df.columns = ["IPC", "건수"]
-        c3.plotly_chart(px.bar(ipc_df, x="IPC", y="건수", title="IPC/CPC 분포"),
-                        use_container_width=True)
-        c4.plotly_chart(px.bar(stats.group_counts(df), x="기술군", y="건수",
-                               title="기술군별 분포"),
-                        use_container_width=True)
-    with tab3:
-        c1, c2 = st.columns(2)
-        c1.plotly_chart(px.bar(stats.keyword_top(df), x="빈도", y="키워드",
-                               orientation="h", title="키워드 빈도 TOP 20",
-                               height=550),
-                        use_container_width=True)
-        heat = stats.tech_combination_heatmap(df)
-        c2.plotly_chart(
-            px.imshow(heat, text_auto=True, aspect="auto",
-                      color_continuous_scale="Blues",
-                      title="기술 조합 히트맵 (대상 기술 × 응용 기술)"),
-            use_container_width=True)
+    c1, c2 = st.columns(2)
+    c1.plotly_chart(px.line(stats.yearly_counts(df), x="연도", y="건수",
+                            markers=True, title="연도별 출원 추이"),
+                    use_container_width=True)
+    c2.plotly_chart(px.bar(stats.group_growth(df), x="기술군", y="성장지수",
+                           color="성장지수", color_continuous_scale="Blues",
+                           title="기술군별 성장지수 (최근 3년)"),
+                    use_container_width=True)
+    c3, c4 = st.columns(2)
+    c3.plotly_chart(px.bar(stats.applicant_top(df), x="건수", y="출원인",
+                           orientation="h", title="출원인 TOP 10"),
+                    use_container_width=True)
+    c4.plotly_chart(px.pie(stats.status_counts(df), names="상태", values="건수",
+                           title="상태별 분포"), use_container_width=True)
+    c5, c6 = st.columns(2)
+    ipc_df = stats.ipc_counts(df); ipc_df.columns = ["IPC", "건수"]
+    c5.plotly_chart(px.bar(ipc_df, x="IPC", y="건수", title="IPC/CPC 분포"),
+                    use_container_width=True)
+    c6.plotly_chart(px.bar(stats.keyword_top(df), x="빈도", y="키워드",
+                           orientation="h", title="키워드 빈도 TOP 20", height=520),
+                    use_container_width=True)
 
 
-# ============================================================ 5. Timeline
-def page_timeline():
-    ui.page_header("Technology Timeline",
-                   "연도별 기술군 추이와 기술발전 흐름을 보여줍니다.")
-    df = require_results()
-    if df.empty:
-        return
-
+def _lc_timeline(df):
     matrix = timeline_mod.group_year_matrix(df)
     if not matrix.empty:
         fig = go.Figure()
         for group in matrix.index:
-            fig.add_trace(go.Scatter(
-                x=matrix.columns, y=matrix.loc[group], mode="lines+markers",
-                name=group, stackgroup="one"))
+            fig.add_trace(go.Scatter(x=matrix.columns, y=matrix.loc[group],
+                                     mode="lines+markers", name=group,
+                                     stackgroup="one"))
         fig.update_layout(title="기술군별 출원 추이 (누적)", xaxis_title="출원연도",
                           yaxis_title="건수", height=420)
         st.plotly_chart(fig, use_container_width=True)
-
     c1, c2 = st.columns(2)
     c1.markdown("##### 기술군 최초 등장 연도")
     c1.dataframe(timeline_mod.first_appearance(df), hide_index=True,
@@ -641,11 +605,9 @@ def page_timeline():
     c2.markdown("##### 연도별 주요 키워드")
     c2.dataframe(timeline_mod.yearly_keywords(df), hide_index=True,
                  use_container_width=True)
-
     rising = timeline_mod.rising_groups(df)
     if rising:
         st.success("최근 증가 기술군: " + ", ".join(rising))
-
     st.markdown("##### 기술발전 흐름 요약")
     if st.button("흐름 문장 생성/갱신") or ss_get("timeline_lines") is None:
         with st.spinner("기술발전 흐름 분석 중..."):
@@ -658,60 +620,93 @@ def page_timeline():
         st.caption("Gemini 미사용 — 데이터 기반 자동 생성 문장입니다.")
 
 
-# ============================================================ 6. Network Map
-def page_network_map():
-    ui.page_header("Time Network Map",
-                   "X축은 출원연도, Y축은 기술군으로 특허를 배치한 시간축 네트워크맵입니다.")
-    df = require_results()
-    if df.empty:
-        return
+def _lc_strategy(df):
+    st.markdown("##### 기술 공백/포화 영역 분석")
+    for line in stats.gap_analysis(df):
+        st.markdown(f"- {line}")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("##### 기술 성장성 점수")
+        gg = stats.group_growth(df)
+        st.dataframe(gg, hide_index=True, use_container_width=True,
+                     column_config={"성장지수": st.column_config.ProgressColumn(
+                         "성장지수", min_value=0,
+                         max_value=float(max(gg["성장지수"].max(), 1)),
+                         format="%.2f")})
+        st.markdown("##### 특허 생존성 분석")
+        st.dataframe(stats.survival_analysis(df), hide_index=True,
+                     use_container_width=True)
+    with c2:
+        st.markdown("##### 출원인 전략 분석")
+        st.dataframe(stats.applicant_strategy(df), hide_index=True,
+                     use_container_width=True)
+        heat = stats.tech_combination_heatmap(df)
+        st.plotly_chart(px.imshow(heat, text_auto=True, aspect="auto",
+                                  color_continuous_scale="Blues",
+                                  title="기술 조합 히트맵 (대상 × 응용 기술)"),
+                        use_container_width=True)
+    gg = stats.group_growth(df)
+    rising = gg[gg["성장지수"] >= 1.5]["기술군"].tolist()
+    falling = gg[gg["성장지수"] < 0.8]["기술군"].tolist()
+    st.markdown("##### 기술 진화 예측 (데이터 기반)")
+    if rising:
+        st.markdown(f"- **{', '.join(rising)}** 영역은 최근 출원이 늘어 향후 "
+                    "경쟁 심화 가능성이 있습니다.")
+    if falling:
+        st.markdown(f"- **{', '.join(falling)}** 영역은 출원이 둔화되는 추세로, "
+                    "기존 등록특허의 존속 여부 모니터링이 중요합니다.")
+    st.markdown("- 공백 영역이면서 내 아이디어 유사도도 낮은 조합이 차별화 "
+                "R&D 후보입니다. (네트워크맵 탭의 음영 구간 참조)")
 
-    f1, f2, f3, f4 = st.columns(4)
+
+def _lc_network(df):
+    f1, f2, f3 = st.columns(3)
     applicants = f1.multiselect("출원인 필터", sorted(df["applicant"].unique()))
     years = sorted(df[df["application_year"] > 0]["application_year"].unique())
     year_range = f2.slider("연도 범위", int(min(years)), int(max(years)),
                            (int(min(years)), int(max(years)))) \
         if len(years) > 1 else None
-    highlight = f3.selectbox(
-        "기술군 하이라이트", ["(전체)"] + sorted(df["technology_group"].unique()))
-    threshold = f4.slider("아이디어 연결 유사도 기준", 0, 100, 40)
-
+    highlight = f3.selectbox("기술군 하이라이트",
+                             ["(전체)"] + sorted(df["technology_group"].unique()))
     fdf = df.copy()
     if applicants:
         fdf = fdf[fdf["applicant"].isin(applicants)]
     if year_range:
         fdf = fdf[(fdf["application_year"] >= year_range[0])
                   & (fdf["application_year"] <= year_range[1])]
-
-    show_edges = st.toggle("특허 간 유사도 엣지 표시", value=True)
     fig = netmap.make_time_network_figure(
         fdf, ss_get("idea", {}).get("title", "내 아이디어"),
-        similarity_threshold=float(threshold),
+        similarity_threshold=40.0,
         highlight_group=None if highlight == "(전체)" else highlight,
-        show_patent_edges=show_edges)
+        show_patent_edges=True)
     st.plotly_chart(fig, use_container_width=True)
     st.session_state["network_fig"] = fig
-    st.caption("노드 크기=종합 유사도 · 색=기술군 · 테두리=상태 · "
-               "빨간 링=유사도 80 이상 고위험 · 회색 음영=3년 이상 공백 구간. "
-               "범례 클릭으로 기술군별 표시/숨김이 가능합니다.")
-
-    risky = fdf[fdf["total_score"] >= 80]
+    st.caption("노드 크기=관련도 · 색=기술군 · 테두리=상태 · 회색 음영=3년 이상 "
+               "공백 구간(차별화 후보 영역). 범례 클릭으로 기술군 표시/숨김.")
+    risky = fdf[fdf["total_score"] >= 70]
     if len(risky):
-        st.error(f"유사도 80 이상 고위험 특허 {len(risky)}건: "
-                 + " / ".join(risky["title"].head(5)))
-
-    options = {f"{int(r['rank'])}위 [{r['total_score']:.0f}] {r['title']}":
-               r["application_no"] for _, r in fdf.iterrows()}
-    if options:
-        choice = st.selectbox("노드 상세 보기 (특허 선택)", list(options.keys()))
-        select_patent(options[choice])
-        p = get_selected_patent(fdf)
-        if p:
-            with st.expander("선택 특허 상세", expanded=False):
-                render_patent_detail(p, ss_get("idea", {}).get("idea_dna", {}))
+        st.warning(f"관련도 70 이상 주의 특허 {len(risky)}건: "
+                   + " / ".join(risky["title"].head(5)))
 
 
-# ============================================================ 7. Drawing Intelligence
+def page_landscape():
+    ui.page_header("Landscape",
+                   "검색 결과의 출원 동향·기술 발전·공백·네트워크를 한 곳에서 분석합니다.")
+    df = require_results()
+    if df.empty:
+        return
+    t1, t2, t3, t4 = st.tabs(["출원 동향", "기술 발전", "기술 공백·전략", "네트워크맵"])
+    with t1:
+        _lc_trends(df)
+    with t2:
+        _lc_timeline(df)
+    with t3:
+        _lc_strategy(df)
+    with t4:
+        _lc_network(df)
+
+
+# ============================================================ Drawing / AI Review
 def page_drawing_intelligence():
     ui.page_header("Drawing Intelligence",
                    "대표도면을 중심으로 특허를 검토합니다. 도면 클릭 시 상세로 이동합니다.")
@@ -805,54 +800,6 @@ def page_ai_review():
                 st.markdown(f"- {item}")
         st.markdown("##### 출원 검토 참고 의견")
         st.info(review.get("review_comment", "-"))
-
-
-# ============================================================ 9. Strategy Board
-def page_strategy_board():
-    ui.page_header("Strategy Board",
-                   "기술 공백·성장성·출원인 전략·생존성을 분석합니다.")
-    df = require_results()
-    if df.empty:
-        return
-
-    st.markdown("##### 기술 공백/포화 영역 분석")
-    for line in stats.gap_analysis(df):
-        st.markdown(f"- {line}")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("##### 기술 성장성 점수")
-        gg = stats.group_growth(df)
-        st.dataframe(
-            gg, hide_index=True, use_container_width=True,
-            column_config={"성장지수": st.column_config.ProgressColumn(
-                "성장지수", min_value=0, max_value=float(max(gg["성장지수"].max(), 1)),
-                format="%.2f")})
-        st.markdown("##### 특허 생존성 분석")
-        st.dataframe(stats.survival_analysis(df), hide_index=True,
-                     use_container_width=True)
-    with c2:
-        st.markdown("##### 출원인 전략 분석")
-        st.dataframe(stats.applicant_strategy(df), hide_index=True,
-                     use_container_width=True)
-        heat = stats.tech_combination_heatmap(df)
-        st.plotly_chart(
-            px.imshow(heat, text_auto=True, aspect="auto",
-                      color_continuous_scale="Blues", title="기술 조합 히트맵"),
-            use_container_width=True)
-
-    st.markdown("##### 기술 진화 예측 (데이터 기반)")
-    gg = stats.group_growth(df)
-    rising = gg[gg["성장지수"] >= 1.5]["기술군"].tolist()
-    falling = gg[gg["성장지수"] < 0.8]["기술군"].tolist()
-    if rising:
-        st.markdown(f"- 성장지수 1.5 이상인 **{', '.join(rising)}** 영역은 향후 "
-                    "출원 경쟁이 심화될 가능성이 있습니다.")
-    if falling:
-        st.markdown(f"- **{', '.join(falling)}** 영역은 출원이 둔화되는 추세로, "
-                    "기존 등록특허의 존속 여부 모니터링이 더 중요합니다.")
-    st.markdown("- 공백 영역과 내 아이디어 유사도가 동시에 낮은 조합이 "
-                "차별화 R&D 후보입니다. (Time Network Map 의 음영 구간 참조)")
 
 
 # ============================================================ History
@@ -1146,12 +1093,9 @@ def main():
 
     pages = {
         "Idea Canvas": page_idea_canvas, "Patent Radar": page_patent_radar,
-        "Patent DNA": page_patent_dna, "Tech Landscape": page_tech_landscape,
-        "Technology Timeline": page_timeline,
-        "Time Network Map": page_network_map,
+        "Patent DNA": page_patent_dna, "Landscape": page_landscape,
         "Drawing Intelligence": page_drawing_intelligence,
-        "AI Patent Review": page_ai_review,
-        "Strategy Board": page_strategy_board, "History": page_history,
+        "AI Patent Review": page_ai_review, "History": page_history,
         "Export Center": page_export_center, "Settings": page_settings,
     }
     pages[choice]()

@@ -15,9 +15,16 @@ from analyzers import patent_dna as dna_mod
 from services import gemini_service
 from utils.text_utils import split_keywords, tokenize
 
+# Gemini(임베딩/DNA) 사용 시: 시맨틱 신호(벡터·DNA)를 신뢰
 TOTAL_WEIGHTS = {
     "vector": 0.30, "dna": 0.25, "keyword": 0.20,
     "claim": 0.15, "ipc": 0.05, "ai_risk": 0.05,
+}
+# Gemini 미사용(fallback) 시: 추출 DNA가 부정확하므로 신뢰도 높은
+# 렉시컬 신호(키워드·청구항·하이브리드 벡터)에 가중치를 둔다.
+FALLBACK_WEIGHTS = {
+    "vector": 0.28, "dna": 0.12, "keyword": 0.32,
+    "claim": 0.20, "ipc": 0.08, "ai_risk": 0.0,
 }
 
 # 기술군 → 관련 IPC 메인클래스 (IPC 일치 점수용)
@@ -63,12 +70,20 @@ def _cosine_to_score(value: float) -> float:
     return round(max(0.0, min(1.0, float(value))) * 100, 1)
 
 
+def _tfidf_cos(texts, analyzer, ngram):
+    vec = TfidfVectorizer(analyzer=analyzer, ngram_range=ngram,
+                          max_features=20000)
+    m = vec.fit_transform(texts)
+    return cosine_similarity(m[0:1], m[1:])[0]
+
+
 def vector_scores(idea_text: str, patent_texts: List[str],
                   try_gemini: bool = True) -> tuple:
     """아이디어 vs 각 특허 벡터 유사도 (0~100 리스트, 방법명).
 
-    1순위 Gemini embedding → 실패 시 TF-IDF cosine fallback.
-    한국어 복합어 대응을 위해 문자 n-gram TF-IDF 를 사용한다.
+    1순위 Gemini embedding. 실패 시 한국어 특성을 고려한 하이브리드 TF-IDF:
+    - 문자 n-gram(형태소/복합어 표면 유사) + 단어 n-gram(용어 단위 일치)을
+      평균하여 단일 신호의 편향을 줄인다.
     """
     if not patent_texts:
         return [], "none"
@@ -78,11 +93,14 @@ def vector_scores(idea_text: str, patent_texts: List[str],
             mat = np.array(embeddings)
             sims = cosine_similarity(mat[:1], mat[1:])[0]
             return [_cosine_to_score(s) for s in sims], "gemini-embedding"
-    vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4),
-                                 max_features=20000)
-    matrix = vectorizer.fit_transform([idea_text] + patent_texts)
-    sims = cosine_similarity(matrix[0:1], matrix[1:])[0]
-    return [_cosine_to_score(s) for s in sims], "tfidf"
+    texts = [idea_text] + patent_texts
+    char = _tfidf_cos(texts, "char_wb", (2, 4))
+    try:
+        word = _tfidf_cos(texts, "word", (1, 2))
+    except ValueError:  # 토큰이 너무 적을 때
+        word = char
+    blended = 0.55 * char + 0.45 * word
+    return [_cosine_to_score(s) for s in blended], "tfidf-hybrid"
 
 
 def pairwise_vector_matrix(texts: List[str]) -> np.ndarray:
@@ -157,12 +175,12 @@ def ipc_score(idea_groups: List[str], patent_ipc: str) -> float:
 
 
 # ------------------------------------------------------------- 종합 점수
-def load_weights() -> dict:
-    """Settings(DB)에 저장된 사용자 가중치를 읽는다. 없으면 기본값.
+def load_weights(mode: str = "full") -> dict:
+    """가중치 로드. 우선순위: 사용자 설정(Settings) > 모드별 기본 프로파일.
 
-    합계가 1이 아니어도 자동 정규화하여 항상 0~100 범위를 유지한다.
+    mode="full"(Gemini 사용) vs "fallback"(렉시컬 위주). 합계는 자동 정규화.
     """
-    weights = dict(TOTAL_WEIGHTS)
+    weights = dict(TOTAL_WEIGHTS if mode == "full" else FALLBACK_WEIGHTS)
     try:
         import json
         from utils import db
@@ -181,23 +199,35 @@ def load_weights() -> dict:
 def total_score(vector: float, dna: float, keyword: float,
                 claim: float, ipc: float, ai_risk: Optional[float] = None,
                 weights: Optional[dict] = None) -> float:
-    """가중합 종합 유사도 (0~100). ai_risk 미산출 시 나머지 평균으로 보정."""
-    if ai_risk is None:
-        ai_risk = (vector + dna + keyword + claim) / 4
-    w = weights or TOTAL_WEIGHTS
-    score = (vector * w["vector"] + dna * w["dna"]
-             + keyword * w["keyword"] + claim * w["claim"]
-             + ipc * w["ipc"] + ai_risk * w["ai_risk"])
+    """가중합 종합 유사도 (0~100).
+
+    ai_risk(Gemini 위험도)가 실제로 산출됐을 때만 반영한다. 산출되지 않으면
+    해당 항목을 제외하고 나머지 가중치를 재정규화한다. (다른 점수의 평균을
+    위험도로 되먹임하던 순환 가중 문제를 제거)
+    """
+    w = dict(weights or TOTAL_WEIGHTS)
+    comp = {"vector": vector, "dna": dna, "keyword": keyword,
+            "claim": claim, "ipc": ipc}
+    if ai_risk is not None:
+        comp["ai_risk"] = ai_risk
+    else:
+        w.pop("ai_risk", None)
+    tw = sum(w.get(k, 0) for k in comp) or 1.0
+    score = sum(comp[k] * w.get(k, 0) for k in comp) / tw
     return round(min(score, 100), 1)
 
 
 def grade(score: float) -> str:
-    """유사도 등급."""
-    if score >= 80:
+    """관련도 등급. 임베딩/렉시컬 혼합 점수의 실제 분포에 맞춘 구간.
+
+    선행기술 스크리닝 도구의 특성상 100% 동일은 드물며, 강한 관련성도
+    50~70 구간에 분포한다. 구간을 이에 맞춰 직관적으로 보정한다.
+    """
+    if score >= 70:
         return "고유사/주의"
-    if score >= 60:
+    if score >= 50:
         return "유사"
-    if score >= 40:
+    if score >= 30:
         return "관련 있음"
     return "낮음"
 
@@ -243,7 +273,8 @@ def score_patents(idea: dict, patents: List[dict],
     c_scores = claim_scores(idea_text,
                             [p.get("representative_claim", "") for p in patents])
     idea_groups = expansion.get("technology_groups") or ["기타"]
-    weights = load_weights()
+    weights = load_weights("full" if v_method == "gemini-embedding"
+                           else "fallback")
 
     results = []
     for i, p in enumerate(patents):
