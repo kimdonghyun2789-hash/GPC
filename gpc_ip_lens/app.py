@@ -66,8 +66,8 @@ def get_results_df() -> pd.DataFrame:
 def require_results() -> pd.DataFrame:
     df = get_results_df()
     if df.empty:
-        st.info("먼저 **Idea Canvas** 에서 아이디어 입력 후 검색을 실행하세요. "
-                "(또는 **Settings** 의 '샘플 데이터 로드' 사용)")
+        st.info("먼저 **Idea Canvas** 에서 아이디어를 입력하고 검색을 "
+                "실행하세요.")
     return df
 
 
@@ -288,8 +288,8 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
         df.iloc[0]["application_no"] if len(df) else None)
     st.session_state.pop("review", None)
     st.session_state.pop("timeline_lines", None)
-    st.success(f"검색 완료: {len(df)}건 수집 (모드: {client.mode}). "
-               "Patent Radar 에서 결과를 확인하세요.")
+    st.success(f"검색 완료: {len(df)}건 수집. Patent Radar 에서 "
+               "결과를 확인하세요.")
 
 
 # ============================================================ 1. Idea Canvas
@@ -297,23 +297,23 @@ def page_idea_canvas():
     ui.page_header("Idea Canvas",
                    "아이디어를 입력하고 검색어를 확장한 뒤 KIPRIS 검색을 실행합니다.")
     if not gemini_service.is_available():
-        st.info("Gemini API Key 가 설정되지 않았습니다. 검색어 확장과 AI 분석은 "
-                "**키워드 기반 fallback** 으로 동작합니다. "
-                "(Settings 에서 키 입력 가능)")
-    if config.use_mock_data():
-        st.caption("현재 **Mock Data 모드** 입니다. KIPRIS 실연동 전까지 "
-                   "sample_patents.csv 기반으로 동작합니다.")
+        st.info("Gemini API Key 가 설정되어 있지 않습니다. 검색어 확장과 AI "
+                "분석은 키워드 기반으로 동작합니다. (Settings 에서 키 입력)")
 
-    idea = ss_get("idea", dict(DEMO_IDEA))
+    idea = ss_get("idea", {})
     col1, col2 = st.columns([2, 1])
     with col1:
-        title = st.text_input("아이디어명", value=idea.get("title", ""))
+        title = st.text_input("아이디어명", value=idea.get("title", ""),
+                              placeholder=DEMO_IDEA["title"])
         description = st.text_area("아이디어 설명", height=140,
-                                   value=idea.get("description", ""))
+                                   value=idea.get("description", ""),
+                                   placeholder=DEMO_IDEA["description"])
         keywords = st.text_input("핵심 키워드 (쉼표 구분)",
-                                 value=idea.get("keywords", ""))
+                                 value=idea.get("keywords", ""),
+                                 placeholder=DEMO_IDEA["keywords"])
         exclude = st.text_input("제외 키워드 (쉼표 구분)",
-                                value=idea.get("exclude_keywords", ""))
+                                value=idea.get("exclude_keywords", ""),
+                                placeholder=DEMO_IDEA["exclude_keywords"])
     with col2:
         scope = st.selectbox("검색 범위", ["국내 특허+실용신안", "국내 특허", "국내 실용신안"])
         top_n = st.slider("유사특허 TOP N", 5, 30, ss_get("top_n", 10))
@@ -1020,7 +1020,7 @@ def page_settings():
                 st.error(f"설정 저장 실패: {exc}")
 
     st.markdown("---")
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     if c1.button("데이터베이스 초기화", use_container_width=True):
         try:
             db.reset_db()
@@ -1033,15 +1033,6 @@ def page_settings():
     if c2.button("캐시 삭제", use_container_width=True):
         n = cache_utils.clear_cache()
         st.success(f"캐시 {n}건을 삭제했습니다.")
-    if c3.button("샘플 데이터 로드 (데모 실행)", use_container_width=True):
-        st.session_state["idea"] = dict(DEMO_IDEA)
-        expansion, method = keyword_expander.expand(
-            DEMO_IDEA["title"], DEMO_IDEA["description"],
-            DEMO_IDEA["keywords"], DEMO_IDEA["exclude_keywords"])
-        st.session_state["expansion"] = expansion
-        st.session_state["expansion_method"] = method
-        st.session_state["idea"]["idea_dna"] = expansion.get("idea_dna", {})
-        run_search_pipeline(st.session_state["idea"], expansion, top_n=10)
 
     # ----- 유사도 가중치 조정
     st.markdown("---")
