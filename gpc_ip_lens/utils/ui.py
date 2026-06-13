@@ -29,19 +29,18 @@ FAINT = "#8A97AC"        # 3차 텍스트
 BORDER = "#E4E8F0"       # 테두리
 ACCENT_SOFT = "#E7F0FF"  # 연한 블루 배경
 
-# 로고 에셋 경로 (개발/배포 모두 대응)
-_LOGO_CANDIDATES = [
-    Path(__file__).resolve().parent.parent / "assets" / "brand" / "ip3-logo.png",
-]
-try:
-    from utils import config as _cfg
-    _LOGO_CANDIDATES.append(_cfg.BASE_DIR / "assets" / "brand" / "ip3-logo.png")
-    import sys as _sys
-    if hasattr(_sys, "_MEIPASS"):
-        _LOGO_CANDIDATES.append(
-            Path(_sys._MEIPASS) / "assets" / "brand" / "ip3-logo.png")
-except Exception:
-    pass
+# 로고 에셋 디렉토리 (개발/배포 모두 대응)
+def _logo_dirs():
+    dirs = [Path(__file__).resolve().parent.parent / "assets" / "brand"]
+    try:
+        from utils import config as _cfg
+        dirs.append(_cfg.BASE_DIR / "assets" / "brand")
+        import sys as _sys
+        if hasattr(_sys, "_MEIPASS"):
+            dirs.append(Path(_sys._MEIPASS) / "assets" / "brand")
+    except Exception:
+        pass
+    return dirs
 
 # 기술군 색 (블루 계열 카테고리 · network_map 공용)
 GROUP_COLORS = {
@@ -75,12 +74,18 @@ SANS = ("'Pretendard','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',"
 _logo_cache = {}
 
 
-def _logo_uri(height: int = 96):
-    """로고 PNG를 height(px)로 축소해 base64 data URI 로 반환. 없으면 None."""
-    if height in _logo_cache:
-        return _logo_cache[height]
+def _logo_uri(height: int = 96, variant: str = "color"):
+    """로고 PNG(투명)를 height(px)로 축소해 base64 data URI 반환. 없으면 None.
+
+    variant="color"(밝은 배경용) / "white"(네이비 배경용 화이트 녹아웃).
+    """
+    key = (height, variant)
+    if key in _logo_cache:
+        return _logo_cache[key]
+    fname = "ip3-logo-white.png" if variant == "white" else "ip3-logo.png"
     uri = None
-    for path in _LOGO_CANDIDATES:
+    for d in _logo_dirs():
+        path = d / fname
         try:
             if path.exists():
                 from PIL import Image
@@ -93,7 +98,7 @@ def _logo_uri(height: int = 96):
                 break
         except Exception:
             continue
-    _logo_cache[height] = uri
+    _logo_cache[key] = uri
     return uri
 
 
@@ -199,12 +204,9 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {{
   padding:1.4rem .85rem;
 }}
 section[data-testid="stSidebar"] * {{ color:#C7D2E6; }}
-.gpc-brand {{ padding:.2rem .3rem 1.1rem; margin-bottom:.6rem;
+.gpc-brand {{ padding:.5rem .3rem 1.2rem; margin-bottom:.6rem;
   border-bottom:1px solid rgba(255,255,255,.1); text-align:center; }}
-.gpc-brand .chip {{ display:inline-flex; align-items:center; justify-content:center;
-  background:#fff; border-radius:16px; padding:12px 16px;
-  box-shadow:0 4px 14px rgba(0,0,0,.18); }}
-.gpc-brand .chip img {{ height:54px; width:auto; object-fit:contain; display:block; }}
+.gpc-brand img {{ height:52px; width:auto; object-fit:contain; display:inline-block; }}
 .gpc-brand .k {{ font-size:.66rem; color:#8FA0C0 !important; letter-spacing:.14em;
   text-transform:uppercase; margin-top:.7rem; }}
 
@@ -270,12 +272,12 @@ def _text_wordmark(color="#FFFFFF") -> str:
 
 
 def sidebar_brand() -> None:
-    """사이드바 상단: 로고 PNG(흰 칩) + IP Cube 캡션."""
-    uri = _logo_uri(108)
+    """사이드바 상단: 화이트 녹아웃 로고(투명) + IP Cube 캡션 (네이비 위)."""
+    uri = _logo_uri(120, variant="white")
     inner = (f'<img src="{uri}" alt="IP3"/>' if uri
-             else _text_wordmark(NAVY))
+             else _text_wordmark("#FFFFFF"))
     st.markdown(
-        f'<div class="gpc-brand"><span class="chip">{inner}</span>'
+        f'<div class="gpc-brand">{inner}'
         f'<div class="k">IP Cube · Patent Intelligence</div></div>',
         unsafe_allow_html=True)
 

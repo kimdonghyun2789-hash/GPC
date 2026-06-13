@@ -33,6 +33,7 @@ DATAS = [
     ("utils", "utils"),
     ("data/sample_patents.csv", "data"),
     ("assets/brand/ip3-logo.png", "assets/brand"),
+    ("assets/brand/ip3-logo-white.png", "assets/brand"),
     (".env.example", "."),
     (".streamlit/config.toml", ".streamlit"),
 ]
