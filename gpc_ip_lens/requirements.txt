@@ -13,7 +13,8 @@ reportlab>=4.0
 pillow>=10.0
 
 # 그래프 PNG 내보내기 (선택 — 없으면 HTML 로 대체됨)
-kaleido>=0.2.1
+# 0.2.1 로 고정: v1+ 는 외부 Chrome 설치를 요구해 단독 실행이 어려움
+kaleido==0.2.1
 
 # exe 빌드용 (개발 환경에만 필요)
 pyinstaller>=6.6
