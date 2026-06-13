@@ -1,185 +1,205 @@
 # -*- coding: utf-8 -*-
-"""GPC IP Lens - UI 디자인 시스템 (미니멀 / 에디토리얼).
+"""GPC IP Lens - UI 디자인 시스템 (professional SaaS).
 
-따뜻한 페이퍼 배경, 절제된 클레이 포인트, 영문 제목 세리프.
-- inject_theme(): 전역 CSS (main() 최상단 1회 호출)
+전문 분석 제품 느낌: 깔끔한 산세리프, 일관된 컴포넌트, 넘침 방지.
+- inject_theme(): 전역 CSS (main() 최상단 1회)
 - sidebar_brand(): 사이드바 워드마크
-- page_header(): 페이지 제목 (이모지 없음)
-- grade_badge / status_badge / group_badge: 절제된 색 배지
-- info_card(): 정보 카드 HTML
+- page_header(): 페이지 제목
+- grade_badge / status_badge / group_badge / info_card
 """
 import html
 
 import streamlit as st
 
 # ---------------------------------------------------------------- 팔레트
-PAPER = "#F4F6F9"        # 앱 배경 (쿨 라이트)
+BG = "#F6F8FB"           # 앱 배경 (쿨 뉴트럴)
 SURFACE = "#FFFFFF"
-INK = "#1E2A38"          # 본문 (네이비 잉크)
-MUTED = "#647281"        # 보조 텍스트
-FAINT = "#97A2AF"        # 3차 텍스트
-BORDER = "#E2E7EE"       # 쿨 보더
-ACCENT = "#2E4B6B"       # 차분한 네이비 포인트
-ACCENT_SOFT = "#E8EDF4"  # 선택 배경
+INK = "#16212E"          # 본문 강조
+MUTED = "#5C6B7A"        # 보조 텍스트
+FAINT = "#93A0AE"        # 3차 텍스트
+BORDER = "#E4E8EF"       # 보더
+PRIMARY = "#2D5BA0"      # 전문 블루(액션/포인트)
+PRIMARY_DARK = "#234C88"
+ACCENT_SOFT = "#EAF1FA"  # 선택/연한 배경
 
-# 기술군 색 (절제된 카테고리 팔레트 · network_map 공용)
+# 기술군 색 (절제된 카테고리)
 GROUP_COLORS = {
-    "접합부": "#4A6FA5", "전단키": "#C0894E", "생산방법": "#5E8B6E",
-    "몰드": "#B36657", "배수": "#7A6CA0", "방수": "#8C7B68",
-    "품질관리": "#A66B90", "유지관리": "#7E8893", "센서": "#9A9356",
-    "시공장비": "#5E94A0", "기타": "#A9A294",
+    "접합부": "#3D6CB0", "전단키": "#C0894E", "생산방법": "#3F8E6E",
+    "몰드": "#C25C4E", "배수": "#6E63B0", "방수": "#8C7B68",
+    "품질관리": "#B05C95", "유지관리": "#6B7A8C", "센서": "#9A9356",
+    "시공장비": "#3E97A8", "기타": "#9AA6B4",
 }
 
-# 유사도 등급 (bg, fg) — 차분한 톤
+# 유사도 등급 (bg, fg)
 GRADE_STYLE = {
-    "고유사/주의": ("#F3E0DC", "#A4452F"),
-    "유사": ("#EFE6D8", "#8A6526"),
-    "관련 있음": ("#E7ECEF", "#4D6071"),
-    "낮음": ("#E7EDE7", "#54664E"),
+    "고유사/주의": ("#FBE7E4", "#C0392B"),
+    "유사": ("#FDF0DD", "#B5701A"),
+    "관련 있음": ("#E7EFFA", "#2D5BA0"),
+    "낮음": ("#EAEFF1", "#5C6B7A"),
 }
 
 # 특허 상태 (bg, fg)
 STATUS_STYLE = {
-    "등록": ("#E5EDE6", "#4C654D"),
-    "공개": ("#E5ECF4", "#34557E"),
-    "소멸": ("#EAECEF", "#6B7682"),
-    "거절": ("#F3E0DC", "#A4452F"),
-    "취하": ("#EAECEF", "#6B7682"),
-    "포기": ("#EAECEF", "#6B7682"),
+    "등록": ("#E4F0E6", "#2F7A45"),
+    "공개": ("#E7EFFA", "#2D5BA0"),
+    "소멸": ("#ECEFF2", "#6B7682"),
+    "거절": ("#FBE7E4", "#C0392B"),
+    "취하": ("#ECEFF2", "#6B7682"),
+    "포기": ("#ECEFF2", "#6B7682"),
 }
 
-SERIF = ("Georgia,'Times New Roman','Nanum Myeongjo','Batang',serif")
-SANS = ("-apple-system,'Segoe UI','Pretendard','Malgun Gothic',"
-        "'Nanum Gothic','Apple SD Gothic Neo',sans-serif")
+SANS = ("'Inter','Pretendard',-apple-system,'Segoe UI','Malgun Gothic',"
+        "'Apple SD Gothic Neo','Nanum Gothic',sans-serif")
 
 
 def inject_theme() -> None:
     st.markdown(
         f"""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {{
-  --paper:{PAPER}; --surface:{SURFACE}; --ink:{INK}; --muted:{MUTED};
-  --faint:{FAINT}; --border:{BORDER}; --accent:{ACCENT}; --accent-soft:{ACCENT_SOFT};
+  --bg:{BG}; --surface:{SURFACE}; --ink:{INK}; --muted:{MUTED};
+  --faint:{FAINT}; --border:{BORDER}; --primary:{PRIMARY};
+  --primary-dark:{PRIMARY_DARK}; --accent-soft:{ACCENT_SOFT};
 }}
 
 html, body, [class*="css"], .stApp, [data-testid="stAppViewContainer"] {{
   font-family:{SANS}; color:var(--ink);
+  -webkit-font-smoothing:antialiased;
 }}
-.stApp {{ background:var(--paper); }}
+.stApp {{ background:var(--bg); }}
 
-/* 메인 컨테이너 — 넉넉한 여백 */
 [data-testid="stMainBlockContainer"] {{
-  padding-top:2.6rem; padding-bottom:4rem; max-width:1180px;
+  padding-top:2.2rem; padding-bottom:4rem; max-width:1280px;
 }}
-
-/* Streamlit 기본 헤더/툴바 숨김 (미니멀) */
 [data-testid="stHeader"] {{ background:transparent; }}
-[data-testid="stToolbar"] {{ right:1rem; }}
 
-/* 제목 — 세리프 에디토리얼 */
-h1,h2,h3,h4 {{ font-family:{SERIF}; letter-spacing:-.01em; color:var(--ink); }}
+/* 타이포 계층 */
+h1,h2,h3,h4 {{ font-family:{SANS}; letter-spacing:-.015em; color:var(--ink);
+  font-weight:700; }}
+h4 {{ font-weight:600; }}
+p, span, div, label, li {{ font-family:{SANS}; }}
 
 /* ---------- 페이지 헤더 ---------- */
-.gpc-page-head {{ margin:0 0 1.8rem; }}
-.gpc-page-head .t {{
-  font-family:{SERIF}; font-size:1.92rem; font-weight:600; color:var(--ink);
-  line-height:1.15;
-}}
-.gpc-page-head .s {{ font-size:.92rem; color:var(--muted); margin-top:.45rem;
-  max-width:60ch; }}
+.gpc-page-head {{ margin:0 0 1.6rem; padding-bottom:1rem;
+  border-bottom:1px solid var(--border); }}
+.gpc-page-head .t {{ font-size:1.6rem; font-weight:700; color:var(--ink);
+  letter-spacing:-.02em; line-height:1.2; }}
+.gpc-page-head .s {{ font-size:.88rem; color:var(--muted); margin-top:.35rem;
+  max-width:70ch; line-height:1.5; }}
 
 /* ---------- 지표 (st.metric) ---------- */
 [data-testid="stMetric"] {{
-  background:var(--surface); border:1px solid var(--border); border-radius:14px;
-  padding:1.05rem 1.2rem;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; padding:1rem 1.15rem;
 }}
-[data-testid="stMetricLabel"] p {{ color:var(--muted); font-size:.8rem;
+[data-testid="stMetricLabel"] p {{ color:var(--muted); font-size:.78rem;
   font-weight:500; }}
-[data-testid="stMetricValue"] {{ color:var(--ink); font-weight:600;
-  font-family:{SERIF}; }}
+[data-testid="stMetricValue"] {{ color:var(--ink); font-weight:700;
+  font-size:1.7rem; letter-spacing:-.02em; }}
 
 /* ---------- 버튼 ---------- */
-.stButton > button, .stDownloadButton > button {{
-  border-radius:10px; font-weight:500; border:1px solid var(--border);
-  background:var(--surface); color:var(--ink); transition:all .14s ease;
-  box-shadow:none;
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {{
+  border-radius:8px; font-weight:600; font-size:.88rem;
+  border:1px solid var(--border); background:var(--surface); color:var(--ink);
+  padding:.5rem 1rem; min-height:2.5rem; transition:all .13s ease;
+  box-shadow:0 1px 1px rgba(22,33,46,.03);
 }}
-.stButton > button:hover, .stDownloadButton > button:hover {{
-  border-color:var(--accent); color:var(--accent); background:var(--surface);
+.stButton > button:hover, .stDownloadButton > button:hover,
+.stFormSubmitButton > button:hover {{
+  border-color:var(--primary); color:var(--primary);
+  background:var(--accent-soft);
 }}
-.stButton > button[kind="primary"] {{
-  background:var(--accent); border:1px solid var(--accent); color:#fff;
+.stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {{
+  background:var(--primary); border:1px solid var(--primary); color:#fff;
+  box-shadow:0 1px 2px rgba(45,91,160,.25);
 }}
-.stButton > button[kind="primary"]:hover {{
-  background:#243B56; border-color:#243B56; color:#fff;
+.stButton > button[kind="primary"]:hover,
+.stFormSubmitButton > button[kind="primary"]:hover {{
+  background:var(--primary-dark); border-color:var(--primary-dark); color:#fff;
 }}
 
 /* ---------- 입력 위젯 ---------- */
-.stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {{
-  border-radius:10px;
+.stTextInput input, .stTextArea textarea,
+.stSelectbox div[data-baseweb="select"] > div,
+.stNumberInput input {{
+  border-radius:8px; border-color:var(--border);
+}}
+.stTextInput input:focus, .stTextArea textarea:focus {{
+  border-color:var(--primary); box-shadow:0 0 0 2px var(--accent-soft);
 }}
 
 /* ---------- 탭 ---------- */
 [data-testid="stTabs"] [data-baseweb="tab-list"] {{
-  gap:1.4rem; border-bottom:1px solid var(--border);
+  gap:1.6rem; border-bottom:1px solid var(--border);
 }}
 [data-testid="stTabs"] [data-baseweb="tab"] {{
-  padding:.55rem .15rem; font-weight:500; color:var(--muted);
+  padding:.6rem .1rem; font-weight:600; font-size:.92rem; color:var(--muted);
 }}
 [data-testid="stTabs"] [aria-selected="true"] {{
-  color:var(--ink); border-bottom-color:var(--accent) !important;
+  color:var(--primary); border-bottom-color:var(--primary) !important;
 }}
 
-/* ---------- 익스팬더 / 데이터프레임 ---------- */
+/* ---------- 컨테이너 ---------- */
 [data-testid="stExpander"] {{
   border:1px solid var(--border); border-radius:12px; background:var(--surface);
 }}
+[data-testid="stExpander"] summary {{ font-weight:500; }}
 [data-testid="stDataFrame"] {{
   border:1px solid var(--border); border-radius:12px; overflow:hidden;
 }}
-[data-testid="stAlert"] {{ border-radius:12px; }}
-hr {{ border-color:var(--border); }}
+[data-testid="stAlert"] {{ border-radius:10px; border:1px solid var(--border); }}
+hr {{ border-color:var(--border); margin:1.4rem 0; }}
 
 /* ---------- 사이드바 ---------- */
 section[data-testid="stSidebar"] {{
-  background:var(--paper); border-right:1px solid var(--border);
+  background:var(--surface); border-right:1px solid var(--border);
 }}
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {{
-  padding:1.6rem 1rem;
+  padding:1.4rem .9rem;
 }}
-.gpc-brand {{ padding:0 .35rem 1.1rem; margin-bottom:.5rem;
-  border-bottom:1px solid var(--border); }}
-.gpc-brand .w {{ font-family:{SERIF}; font-size:1.32rem; font-weight:600;
-  color:var(--ink); letter-spacing:-.01em; }}
-.gpc-brand .k {{ font-size:.7rem; color:var(--faint); letter-spacing:.16em;
-  text-transform:uppercase; margin-top:.15rem; }}
+.gpc-brand {{ padding:.2rem .4rem 1rem; margin-bottom:.5rem;
+  border-bottom:1px solid var(--border); display:flex; align-items:center;
+  gap:.6rem; }}
+.gpc-brand .mark {{ width:30px; height:30px; border-radius:8px; flex:none;
+  background:linear-gradient(135deg,#2D5BA0,#16335B); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-weight:700;
+  font-size:.95rem; }}
+.gpc-brand .w {{ font-size:1.06rem; font-weight:700; color:var(--ink);
+  letter-spacing:-.02em; line-height:1.1; }}
+.gpc-brand .k {{ font-size:.62rem; color:var(--faint); letter-spacing:.12em;
+  text-transform:uppercase; }}
 
-/* 라디오 → 미니멀 내비게이션 */
-section[data-testid="stSidebar"] div[role="radiogroup"] {{ gap:1px; margin-top:.6rem; }}
+section[data-testid="stSidebar"] div[role="radiogroup"] {{ gap:2px; margin-top:.5rem; }}
 section[data-testid="stSidebar"] div[role="radiogroup"] > label {{
   border-radius:8px; padding:.5rem .7rem; margin:0; cursor:pointer;
-  font-size:.92rem; color:var(--muted); font-weight:450;
-  border-left:2px solid transparent; transition:all .12s ease;
+  font-size:.9rem; color:var(--muted); font-weight:500;
+  transition:all .12s ease; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis;
 }}
 section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {{
-  color:var(--ink); background:rgba(0,0,0,.025);
+  color:var(--ink); background:#F1F4F8;
 }}
 section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {{
-  color:var(--accent); font-weight:600; background:var(--accent-soft);
-  border-left:2px solid var(--accent);
+  color:var(--primary); font-weight:600; background:var(--accent-soft);
 }}
 section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {{
   display:none;
 }}
 
-/* ---------- 배지 / 카드 ---------- */
-.gpc-badge {{ display:inline-block; padding:2px 10px; border-radius:6px;
-  font-size:.74rem; font-weight:600; line-height:1.55; }}
+/* ---------- 배지 (넘침 방지) ---------- */
+.gpc-badge {{ display:inline-block; padding:2px 9px; border-radius:6px;
+  font-size:.74rem; font-weight:600; line-height:1.6; white-space:nowrap;
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }}
+
+/* ---------- 정보 카드 (넘침 방지) ---------- */
 .gpc-card {{ background:var(--surface); border:1px solid var(--border);
-  border-radius:13px; padding:1rem 1.15rem; height:100%; }}
-.gpc-card .ct {{ font-size:.7rem; color:var(--faint); font-weight:600;
-  letter-spacing:.1em; text-transform:uppercase; margin-bottom:.5rem; }}
-.gpc-card .cv {{ font-size:.9rem; color:var(--ink); line-height:1.65; }}
+  border-radius:12px; padding:.95rem 1.1rem; height:100%;
+  overflow-wrap:anywhere; word-break:break-word; }}
+.gpc-card .ct {{ font-size:.68rem; color:var(--faint); font-weight:700;
+  letter-spacing:.08em; text-transform:uppercase; margin-bottom:.45rem; }}
+.gpc-card .cv {{ font-size:.88rem; color:var(--ink); line-height:1.6; }}
 </style>
         """,
         unsafe_allow_html=True,
@@ -187,10 +207,10 @@ section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-chil
 
 
 def sidebar_brand() -> None:
-    """사이드바 상단 워드마크."""
     st.markdown(
-        '<div class="gpc-brand"><div class="w">GPC IP Lens</div>'
-        '<div class="k">Patent Intelligence</div></div>',
+        '<div class="gpc-brand"><div class="mark">G</div>'
+        '<div><div class="w">GPC IP Lens</div>'
+        '<div class="k">Patent Intelligence</div></div></div>',
         unsafe_allow_html=True)
 
 
@@ -208,16 +228,16 @@ def _badge(text: str, bg: str, fg: str) -> str:
 
 
 def grade_badge(grade: str) -> str:
-    bg, fg = GRADE_STYLE.get(grade, ("#ECEAE3", "#7C766A"))
+    bg, fg = GRADE_STYLE.get(grade, ("#ECEFF2", "#6B7682"))
     return _badge(grade, bg, fg)
 
 
 def status_badge(status: str) -> str:
-    bg, fg = STATUS_STYLE.get(status, ("#ECEAE3", "#7C766A"))
+    bg, fg = STATUS_STYLE.get(status, ("#ECEFF2", "#6B7682"))
     return _badge(status, bg, fg)
 
 
-def _tint(hex_color: str, amt: float = 0.86) -> str:
+def _tint(hex_color: str, amt: float = 0.88) -> str:
     h = hex_color.lstrip("#")
     r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
     r = int(r + (255 - r) * amt); g = int(g + (255 - g) * amt)
@@ -226,7 +246,7 @@ def _tint(hex_color: str, amt: float = 0.86) -> str:
 
 
 def group_badge(group: str) -> str:
-    color = GROUP_COLORS.get(group, "#A9A294")
+    color = GROUP_COLORS.get(group, "#9AA6B4")
     return _badge(group, _tint(color), color)
 
 

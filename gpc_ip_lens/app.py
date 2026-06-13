@@ -184,7 +184,7 @@ def render_patent_detail(p: dict, idea_dna: dict):
             ui.status_badge(p.get("status", "-")),
             ui.group_badge(p.get("technology_group", "기타")),
             ui.grade_badge(p.get("grade", sim_mod.grade(score))),
-            f"<span class='gpc-badge' style='background:#E8EDF4;color:#2E4B6B'>"
+            f"<span class='gpc-badge' style='background:#EAF1FA;color:#2D5BA0'>"
             f"유사도 {score:.0f}</span>",
         ])
         st.markdown(f"<div style='margin:2px 0 10px'>{badges}</div>",
@@ -358,7 +358,8 @@ def page_idea_canvas():
         st.markdown("---")
         method = ss_get("expansion_method", "-")
         st.markdown(f"#### 검색어 확장 결과 &nbsp;<span style='font-size:.8rem;"
-                    f"color:#64788F'>({method})</span>", unsafe_allow_html=True)
+                    f"color:#93A0AE;font-weight:500'>({method})</span>",
+                    unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
         c1.markdown(ui.info_card(
             "국문 키워드",
