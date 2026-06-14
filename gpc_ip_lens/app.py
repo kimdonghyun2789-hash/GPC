@@ -1664,8 +1664,11 @@ def page_brand_guide():
 # ============================================================ 메인
 def main():
     ss = st.session_state
+    valid_pages = {"Home", "New Review", "Review Cases", "Watchlist",
+                   "Monitoring", "Reports"}
     if "page" not in ss:
-        ss["page"] = "Home"
+        qp = st.query_params.get("page")     # ?page=... 딥링크로 초기 화면 지정
+        ss["page"] = qp if qp in valid_pages else "Home"
     if ss.get("_goto"):                      # 바로가기 버튼이 설정한 이동
         ss["page"] = ss.pop("_goto")
 
