@@ -6,8 +6,8 @@
     python build_exe.py --onefile  # 단일 exe (시작 느림, 경로 이슈 가능)
 
 빌드 결과:
-    dist/GPC_IP_Lens/GPC_IP_Lens.exe   (onedir)
-    dist/GPC_IP_Lens.exe               (onefile)
+    dist/IP3/IP3.exe   (onedir)
+    dist/IP3.exe       (onefile)
 
 주의:
 - Streamlit 은 메타데이터/정적 리소스가 필요하므로 --collect-all 옵션이 필수다.
@@ -22,7 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SEP = ";" if os.name == "nt" else ":"  # --add-data 구분자 (Windows 는 ;)
 
-APP_NAME = "GPC_IP_Lens"
+APP_NAME = "IP3"
 
 # 함께 번들할 소스/데이터 (launcher 가 app.py 를 찾을 수 있어야 함)
 DATAS = [
@@ -31,7 +31,11 @@ DATAS = [
     ("analyzers", "analyzers"),
     ("exporters", "exporters"),
     ("utils", "utils"),
+    ("domain", "domain"),
+    ("jobs", "jobs"),
+    ("prompts", "prompts"),
     ("data/sample_patents.csv", "data"),
+    ("data/sample_patents_overseas.csv", "data"),
     ("assets/brand/ip3-logo.png", "assets/brand"),
     ("assets/brand/ip3-logo-white.png", "assets/brand"),
     (".env.example", "."),
@@ -83,9 +87,10 @@ def build(onefile: bool = False) -> None:
         if dist.exists():
             for sub in ("data/patent_cache", "data/drawings", "data/exports", "db"):
                 (dist / sub).mkdir(parents=True, exist_ok=True)
-            sample = HERE / "data" / "sample_patents.csv"
-            if sample.exists():
-                shutil.copy2(sample, dist / "data" / "sample_patents.csv")
+            for csv_name in ("sample_patents.csv", "sample_patents_overseas.csv"):
+                sample = HERE / "data" / csv_name
+                if sample.exists():
+                    shutil.copy2(sample, dist / "data" / csv_name)
             env_example = HERE / ".env.example"
             if env_example.exists():
                 shutil.copy2(env_example, dist / ".env.example")

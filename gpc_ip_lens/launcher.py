@@ -17,7 +17,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-PORT = int(os.environ.get("GPC_IP_LENS_PORT", "8501"))
+PORT = int(os.environ.get("IP3_PORT", "8501"))
 
 
 def base_dir() -> Path:
