@@ -71,6 +71,37 @@ STATUS_STYLE = {
 SANS = ("'Pretendard','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',"
         "'Malgun Gothic','Apple SD Gothic Neo',sans-serif")
 
+# 차트 색 시퀀스 (브랜드 블루 계열)
+CHART_SEQUENCE = ["#0057FF", "#2F7CFF", "#4DA3FF", "#013A9E", "#1FA59A",
+                  "#9A5FC0", "#6E7EA0", "#A9D0FF"]
+
+
+def _init_plotly_theme():
+    """모든 Plotly 차트를 브랜드 톤으로 자동 통일 (기본 템플릿 지정)."""
+    try:
+        import plotly.graph_objects as go
+        import plotly.io as pio
+        pio.templates["ip3"] = go.layout.Template(layout=dict(
+            colorway=CHART_SEQUENCE,
+            font=dict(family="Pretendard, Inter, -apple-system, "
+                      "'Malgun Gothic', sans-serif", color="#0F2147", size=12),
+            title=dict(font=dict(size=14, color="#0F2147")),
+            paper_bgcolor="white", plot_bgcolor="white",
+            xaxis=dict(gridcolor="#EDEFF4", linecolor="#E4E8F0",
+                       zerolinecolor="#EDEFF4"),
+            yaxis=dict(gridcolor="#EDEFF4", linecolor="#E4E8F0",
+                       zerolinecolor="#EDEFF4"),
+            colorscale=dict(sequential=[[0.0, "#E3EDFF"], [1.0, "#0057FF"]]),
+            legend=dict(font=dict(size=11)),
+            margin=dict(l=40, r=20, t=44, b=40),
+        ))
+        pio.templates.default = "ip3"
+    except Exception:
+        pass
+
+
+_init_plotly_theme()
+
 _logo_cache = {}
 
 

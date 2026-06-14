@@ -101,8 +101,11 @@ def get_results_df() -> pd.DataFrame:
 def require_results() -> pd.DataFrame:
     df = get_results_df()
     if df.empty:
-        st.info("먼저 **Idea Canvas** 에서 아이디어를 입력하고 검색을 "
-                "실행하세요.")
+        st.info("아직 분석할 검색 결과가 없습니다. **STEP 1 · 아이디어 입력**에서 "
+                "아이디어를 한 번 입력·검색하면, 그 결과가 이 화면에 표시됩니다.")
+        if st.button("아이디어 입력으로 가기", type="primary",
+                     icon=":material/lightbulb:", key="goto_idea_empty"):
+            goto("Idea Canvas")
     return df
 
 
