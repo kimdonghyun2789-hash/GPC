@@ -10,6 +10,7 @@ import re
 from typing import List
 
 from services import gemini_service
+from utils import prompts
 from utils.text_utils import jaccard, split_keywords, tokenize
 
 VERDICTS = ["일치", "부분일치", "차이", "미확인"]
@@ -97,19 +98,22 @@ def match(idea: dict, idea_dna: dict, patent: dict,
     """구성요소 매칭표 생성. (행 리스트, 방법 'gemini'|'fallback') 반환."""
     els = idea_elements or decompose_idea(idea, idea_dna)
     if gemini_service.is_available():
-        prompt = f"""당신은 건설/PC 분야 특허 분석 보조도구입니다.
-내 아이디어의 핵심 구성요소가 아래 특허의 대표청구항에 존재하는지 비교하세요.
-침해/유효성을 단정하지 말고 일치/부분일치/차이/미확인으로만 판정하세요.
-
-내 아이디어 구성요소: {json.dumps(els, ensure_ascii=False)}
-특허명: {patent.get('title','')}
-대표청구항: {patent.get('representative_claim','')}
-요약: {patent.get('abstract','')}
-
-아래 JSON 배열로만 응답:
-[{{"내 아이디어 구성요소":"...","유사특허 청구항 구성":"근거 문장",
-   "일치 여부":"일치|부분일치|차이|미확인","근거 청구항":"청구항 번호/위치",
-   "차별화 가능성":"높음|보통|낮음"}}]"""
+        prompt = prompts.render(
+            "claim_chart",
+            elements_json=json.dumps(els, ensure_ascii=False),
+            title=patent.get("title", ""),
+            claim=patent.get("representative_claim", ""),
+            abstract=patent.get("abstract", ""))
+        if prompt is None:
+            prompt = (
+                "내 아이디어 구성요소가 특허 대표청구항에 존재하는지 일치/"
+                "부분일치/차이/미확인으로 판정해 JSON 배열로만 응답하세요. "
+                "각 항목 키: 내 아이디어 구성요소, 유사특허 청구항 구성, "
+                "일치 여부, 근거 청구항, 차별화 가능성.\n"
+                f"구성요소: {json.dumps(els, ensure_ascii=False)}\n"
+                f"특허명: {patent.get('title','')}\n"
+                f"대표청구항: {patent.get('representative_claim','')}\n"
+                f"요약: {patent.get('abstract','')}")
         res = gemini_service.generate_json(prompt)
         if isinstance(res, list) and res:
             rows = [r for r in res if isinstance(r, dict)

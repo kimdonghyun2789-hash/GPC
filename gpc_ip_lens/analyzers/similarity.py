@@ -217,6 +217,43 @@ def total_score(vector: float, dna: float, keyword: float,
     return round(min(score, 100), 1)
 
 
+def claim_risk_score(doc: float, claim: float, keyword: float,
+                     solution: float) -> float:
+    """청구항 중심 특허 리스크 (0~100).
+
+    선행기술이 내 아이디어의 청구 범위를 침해/저촉할 가능성을 가늠하기 위한
+    재정렬용 점수. 청구항 일치도와 해결수단 유사도에 가중치를 둔다.
+    """
+    risk = 0.45 * claim + 0.25 * solution + 0.20 * doc + 0.10 * keyword
+    return round(min(risk, 100), 1)
+
+
+def split_scores(p: dict, idea_dna: dict) -> dict:
+    """7분할 점수(검토신뢰도 제외 6개 + 특허리스크). 저장 필드에서 재계산 가능."""
+    import json as _json
+    idea_dna = idea_dna or {}
+    p_dna = p.get("patent_dna") or {}
+    if isinstance(p_dna, str):
+        try:
+            p_dna = _json.loads(p_dna)
+        except (ValueError, TypeError):
+            p_dna = {}
+    doc = float(p.get("vector_score", 0) or 0)
+    claim = float(p.get("claim_score", 0) or 0)
+    keyword = float(p.get("keyword_score", 0) or 0)
+    prob = round(dna_mod.field_similarity(
+        idea_dna.get("problem"), p_dna.get("problem")) * 100, 1)
+    sol = round(dna_mod.field_similarity(
+        idea_dna.get("solution"), p_dna.get("solution")) * 100, 1)
+    eff = round(dna_mod.field_similarity(
+        idea_dna.get("effect"), p_dna.get("effect")) * 100, 1)
+    risk = claim_risk_score(doc, claim, keyword, sol)
+    return {
+        "문헌유사도": doc, "청구항일치도": claim, "기술문제유사도": prob,
+        "해결수단유사도": sol, "효과유사도": eff, "특허리스크": risk,
+    }
+
+
 def grade(score: float) -> str:
     """관련도 등급. 임베딩/렉시컬 혼합 점수의 실제 분포에 맞춘 구간.
 
@@ -287,6 +324,10 @@ def score_patents(idea: dict, patents: List[dict],
         cl_score = c_scores[i] if i < len(c_scores) else 0.0
         t_score = total_score(v_score, d_score, k_score, cl_score, i_score,
                               weights=weights)
+        # 해결수단 유사도(청구항 리스크용) + 청구항 중심 리스크 점수
+        sol_sim = round(dna_mod.field_similarity(
+            idea_dna.get("solution"), p_dna.get("solution")) * 100, 1)
+        risk = claim_risk_score(v_score, cl_score, k_score, sol_sim)
 
         p.update({
             "vector_score": v_score,
@@ -296,6 +337,7 @@ def score_patents(idea: dict, patents: List[dict],
             "ipc_score": i_score,
             "ai_risk_score": round((v_score + d_score + k_score + cl_score) / 4, 1),
             "total_score": t_score,
+            "claim_risk": risk,
             "grade": grade(t_score),
             "matched_keywords": matched,
             "patent_dna": p_dna,
@@ -304,7 +346,8 @@ def score_patents(idea: dict, patents: List[dict],
             "comparison_text": patent_texts[i],
         })
         results.append(p)
-    results.sort(key=lambda x: x["total_score"], reverse=True)
+    # 2단계: 넓게 수집한 결과를 '청구항 리스크' 기준으로 재정렬(TOP N 우선순위)
+    results.sort(key=lambda x: (x["claim_risk"], x["total_score"]), reverse=True)
     for rank, p in enumerate(results, start=1):
         p["rank"] = rank
     return results

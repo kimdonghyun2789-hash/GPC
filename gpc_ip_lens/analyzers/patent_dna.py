@@ -2,6 +2,7 @@
 """IP³ (IP Cube) - 특허 DNA 추출 및 비교."""
 from typing import List
 
+from domain import pc_dictionary
 from services import gemini_service
 from utils.text_utils import jaccard, tokenize
 
@@ -11,6 +12,7 @@ DNA_FIELDS = [
     ("solution", "해결수단"),
     ("components", "구성요소"),
     ("stage", "적용시점"),
+    ("stages", "공정단계"),
     ("method", "제조/시공방법"),
     ("effect", "효과"),
 ]
@@ -39,7 +41,12 @@ def _fallback_dna(title: str, abstract: str, claim: str) -> dict:
         return ""
 
     claim_tokens = tokenize(claim)
-    components = list(dict.fromkeys(claim_tokens))[:8]
+    full = f"{title} {abstract} {claim}"
+    # 구성요소: 도메인 부재 어휘 우선 + 청구항 토큰 보충
+    components = pc_dictionary.detect_components(full)
+    components += [t for t in dict.fromkeys(claim_tokens) if t not in components]
+    components = components[:8]
+    stages = pc_dictionary.detect_stages(full)
 
     from analyzers.classifier import classify_text
     return {
@@ -47,25 +54,36 @@ def _fallback_dna(title: str, abstract: str, claim: str) -> dict:
         "problem": find_sentence(_PROBLEM_HINTS),
         "solution": abstract_sents[0][:120] if abstract_sents else title,
         "components": components,
-        "stage": "시공" if "시공" in (title + abstract) else
-                 ("생산" if any(h in (title + abstract) for h in ("제조", "생산", "제작")) else ""),
+        "stage": pc_dictionary.primary_stage(full),
+        "stages": stages,
         "method": find_sentence(_METHOD_HINTS),
-        "effect": find_sentence(_EFFECT_HINTS),
+        "effect": find_sentence(_EFFECT_HINTS) or ", ".join(
+            pc_dictionary.detect_effects(full)),
         "technology_group": classify_text(f"{title} {abstract}"),
     }
 
 
 def extract_dna(patent: dict, use_gemini: bool = True) -> dict:
-    """특허 1건의 DNA 추출. Gemini 실패 시 fallback."""
+    """특허 1건의 DNA 추출. Gemini 실패 시 fallback. 공정단계는 항상 도메인 사전으로 보강."""
     title = str(patent.get("title", ""))
     abstract = str(patent.get("abstract", ""))
     claim = str(patent.get("representative_claim", ""))
+    full = f"{title} {abstract} {claim}"
+    dna = None
     if use_gemini and gemini_service.is_available():
         dna = gemini_service.extract_patent_dna(title, abstract, claim)
         if dna and isinstance(dna, dict) and dna.get("target"):
             dna.setdefault("components", [])
-            return dna
-    return _fallback_dna(title, abstract, claim)
+        else:
+            dna = None
+    if dna is None:
+        dna = _fallback_dna(title, abstract, claim)
+    # 공정단계는 데이터 소스와 무관하게 도메인 사전으로 보강(누락 방지)
+    if not dna.get("stages"):
+        dna["stages"] = pc_dictionary.detect_stages(full)
+    if not dna.get("stage"):
+        dna["stage"] = pc_dictionary.primary_stage(full)
+    return dna
 
 
 def _field_text(value) -> str:

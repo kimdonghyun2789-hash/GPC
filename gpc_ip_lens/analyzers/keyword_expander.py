@@ -2,6 +2,7 @@
 """IP³ (IP Cube) - 검색어 확장 (Gemini + fallback)."""
 from typing import List
 
+from domain import pc_dictionary
 from services import gemini_service
 from utils.text_utils import split_keywords, tokenize
 
@@ -54,21 +55,42 @@ def fallback_expand(idea_title: str, idea_description: str,
     synonyms = list(dict.fromkeys(synonyms))[:10]
     english = list(dict.fromkeys(english))[:10]
 
-    # 검색식 후보: 핵심 키워드 2~3개 조합
+    # 멀티 시나리오 검색식: 여러 관점(핵심구성/해결수단/공정단계/효과/영문)에서
+    # 검색식을 생성해 단일 조합의 누락을 줄인다.
+    full_text = f"{idea_title} {idea_description} {keywords}"
+    stages = pc_dictionary.detect_stages(full_text)
+    effects = pc_dictionary.detect_effects(full_text)
+    components = pc_dictionary.detect_components(full_text)
+
     queries: List[str] = []
+    # 1) 핵심 구성 중심
     if len(base) >= 2:
         queries.append("*".join(base[:2]))
     if len(base) >= 3:
         queries.append("*".join(base[:3]))
-        queries.append(f"{base[0]}*{base[2]}")
-    if base:
-        queries.append(base[0])
+    # 2) 핵심 부재 + 공정단계 중심 (사용자 핵심어 우선, 없으면 도메인 부재)
+    anchor = (base[0] if base else (components[0] if components else ""))
+    if anchor and stages:
+        queries.append(f"{anchor}*{stages[0]}")
+    # 3) 해결수단(동의어) 중심
+    if anchor:
         for s in synonyms[:2]:
-            queries.append(f"{base[0]}*{s}")
-    queries = list(dict.fromkeys(queries))[:5]
+            queries.append(f"{anchor}*{s}")
+    # 4) 효과 중심
+    if anchor and effects:
+        queries.append(f"{anchor}*{effects[0]}")
+    # 5) 영문 중심
+    if len(english) >= 2:
+        queries.append(f"{english[0]}*{english[1]}")
+    elif english and anchor:
+        queries.append(f"{anchor}*{english[0]}")
+    # 6) 단일 핵심어 (보강)
+    if anchor:
+        queries.append(anchor)
+    queries = [q for q in dict.fromkeys(queries) if q][:5]
 
     from analyzers.classifier import classify_text
-    tech_group = classify_text(f"{idea_title} {idea_description} {keywords}")
+    tech_group = classify_text(full_text)
 
     result = dict(EMPTY_EXPANSION)
     result.update({
@@ -79,13 +101,15 @@ def fallback_expand(idea_title: str, idea_description: str,
         "search_queries": queries,
         "technology_groups": [tech_group],
         "idea_dna": {
-            "target": base[0] if base else "",
+            "target": (components[0] if components else
+                       (base[0] if base else "")),
             "problem": "",
             "solution": " ".join(base[1:3]),
-            "components": base[:5],
-            "stage": "",
+            "components": (components or base[:5]),
+            "stage": stages[0] if stages else "",
+            "stages": stages,
             "method": "",
-            "effect": "",
+            "effect": ", ".join(effects),
             "technology_group": tech_group,
         },
     })

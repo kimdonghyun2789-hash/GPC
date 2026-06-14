@@ -244,6 +244,21 @@ def render_patent_detail(p: dict, idea_dna: dict):
             db.set_review_status(app_no, sel, p.get("title", ""),
                                  p.get("applicant", ""))
             st.rerun()
+    # 분할 점수 (문헌/청구항/문제/해결수단/효과/특허리스크)
+    try:
+        sp = sim_mod.split_scores(p, idea_dna or {})
+        sp_df = pd.DataFrame({"항목": list(sp.keys()),
+                              "점수": list(sp.values())})
+        fig_sp = px.bar(sp_df, x="점수", y="항목", orientation="h",
+                        range_x=[0, 100], height=240, text="점수")
+        fig_sp.update_layout(margin=dict(l=4, r=4, t=8, b=4),
+                             yaxis_title="", xaxis_title="")
+        st.markdown("###### 분할 점수")
+        st.plotly_chart(fig_sp, use_container_width=True,
+                        key=f"split_{p.get('application_no','')}")
+    except Exception:
+        pass
+
     with st.expander("요약", expanded=True):
         st.write(p.get("abstract", "-"))
     with st.expander("대표청구항"):
@@ -458,11 +473,17 @@ def page_patent_radar():
         return
 
     head = fdf.head(top_n)
-    # ---- TOP N 표
+    st.caption("TOP N 은 '청구항 리스크'(청구항 일치도·해결수단 유사도 중심) 순으로 "
+               "정렬됩니다. 종합은 문헌·DNA·키워드를 포함한 가중 유사도입니다.")
+    # ---- TOP N 표 (청구항 리스크 우선)
+    risk_col = (head["claim_risk"] if "claim_risk" in head
+                else head["total_score"])
     table = pd.DataFrame({
         "순위": head["rank"],
+        "청구항리스크": risk_col,
         "종합": head["total_score"],
-        "벡터": head["vector_score"],
+        "문헌": head["vector_score"],
+        "청구항": head["claim_score"],
         "키워드": head["keyword_score"],
         "DNA": head["dna_score"],
         "특허명": head["title"],
@@ -472,13 +493,15 @@ def page_patent_radar():
         "IPC/CPC": head["ipc"],
         "일치 키워드": head["matched_keywords"].apply(
             lambda v: ", ".join(v[:4]) if isinstance(v, list) else str(v)),
-        "AI 위험도": head["total_score"].apply(sim_mod.grade),
+        "등급": head["total_score"].apply(sim_mod.grade),
         "KIPRIS": head["kipris_url"],
     })
     st.dataframe(
         table, use_container_width=True, hide_index=True,
         column_config={
             "KIPRIS": st.column_config.LinkColumn("KIPRIS", display_text="원문"),
+            "청구항리스크": st.column_config.ProgressColumn(
+                "청구항리스크", min_value=0, max_value=100, format="%.0f"),
             "종합": st.column_config.ProgressColumn(
                 "종합", min_value=0, max_value=100, format="%.0f"),
         })
@@ -820,8 +843,9 @@ def page_ai_review():
 
 
 # ============================================================ 결과 복원 유틸
-def _reconstruct_results(rows: list) -> list:
-    """DB 행(load_idea_results) → 앱 results 포맷으로 복원."""
+def _reconstruct_results(rows: list, idea_dna: dict = None) -> list:
+    """DB 행(load_idea_results) → 앱 results 포맷으로 복원 (청구항 리스크 재정렬)."""
+    idea_dna = idea_dna or {}
     results = []
     for r in rows:
         p = dict(r)
@@ -835,7 +859,10 @@ def _reconstruct_results(rows: list) -> list:
             p["patent_dna"] = {}
         p["grade"] = sim_mod.grade(p.get("total_score", 0))
         p["comparison_text"] = sim_mod.build_patent_text(p)
+        p["claim_risk"] = sim_mod.split_scores(p, idea_dna)["특허리스크"]
         results.append(p)
+    results.sort(key=lambda x: (x.get("claim_risk", 0),
+                                x.get("total_score", 0)), reverse=True)
     for rank, p in enumerate(results, start=1):
         p["rank"] = rank
     return results
@@ -1272,7 +1299,7 @@ def _load_case_into_session(idea_id: int):
         idea_dna = json.loads(meta.get("idea_dna_json") or "{}")
     except (json.JSONDecodeError, TypeError):
         idea_dna = {}
-    results = _reconstruct_results(rows)
+    results = _reconstruct_results(rows, idea_dna)
     st.session_state["idea"] = {
         "title": meta.get("title", ""),
         "description": meta.get("description", ""),

@@ -8,7 +8,7 @@ import json
 import re
 from typing import List, Optional
 
-from utils import config
+from utils import config, prompts
 
 try:
     import google.generativeai as genai
@@ -103,55 +103,31 @@ def generate_text(prompt: str) -> Optional[str]:
 def expand_keywords(idea_title: str, idea_description: str,
                     keywords: str, exclude_keywords: str) -> Optional[dict]:
     """아이디어 설명을 받아 검색어 확장 JSON 을 반환한다."""
-    prompt = f"""당신은 건설/프리캐스트 콘크리트(PC) 분야 특허 검색 전문가입니다.
-아래 아이디어를 분석하여 KIPRIS 특허 검색에 사용할 검색어를 확장하세요.
-
-아이디어명: {idea_title}
-아이디어 설명: {idea_description}
-핵심 키워드: {keywords}
-제외 키워드: {exclude_keywords}
-
-반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 추가하지 마세요.
-{{
-  "korean_keywords": ["국문 키워드 5~10개"],
-  "english_keywords": ["영문 키워드 5~10개"],
-  "synonyms": ["동의어"],
-  "exclude_keywords": ["제외어"],
-  "search_queries": ["KIPRIS 검색식 후보 3~5개 (예: 프리캐스트*기둥*접합)"],
-  "technology_groups": ["기술군 후보 (접합부/전단키/생산방법/몰드/배수/방수/품질관리/유지관리/센서/시공장비/기타 중에서)"],
-  "idea_dna": {{
-    "target": "대상 기술/부재",
-    "problem": "해결하려는 문제",
-    "solution": "해결수단",
-    "components": ["구성요소"],
-    "stage": "적용시점 (생산/시공/유지관리 등)",
-    "method": "제조/시공방법",
-    "effect": "효과",
-    "technology_group": "대표 기술군"
-  }}
-}}"""
+    prompt = prompts.render(
+        "keyword_expand", idea_title=idea_title,
+        idea_description=idea_description, keywords=keywords,
+        exclude_keywords=exclude_keywords)
+    if prompt is None:
+        prompt = (
+            "당신은 건설/PC 분야 특허 검색 전문가입니다. 아래 아이디어로 "
+            "KIPRIS 검색어를 확장해 korean_keywords, english_keywords, "
+            "synonyms, exclude_keywords, search_queries, technology_groups, "
+            "idea_dna 키를 가진 JSON 으로만 응답하세요.\n"
+            f"아이디어명: {idea_title}\n설명: {idea_description}\n"
+            f"키워드: {keywords}\n제외: {exclude_keywords}")
     return generate_json(prompt)
 
 
 # ----------------------------------------------------------- 특허 DNA 추출
 def extract_patent_dna(title: str, abstract: str, claim: str) -> Optional[dict]:
-    prompt = f"""당신은 건설/PC 분야 특허 분석 전문가입니다.
-아래 특허에서 특허 DNA 를 추출하세요.
-
-특허명: {title}
-요약: {abstract}
-대표청구항: {claim}
-
-반드시 아래 JSON 형식으로만 응답하세요.
-{{
-  "target": "대상 기술/부재",
-  "problem": "해결하려는 문제",
-  "solution": "해결수단",
-  "components": ["구성요소"],
-  "stage": "적용시점",
-  "method": "제조/시공방법",
-  "effect": "효과"
-}}"""
+    prompt = prompts.render("patent_dna", title=title, abstract=abstract,
+                            claim=claim)
+    if prompt is None:
+        prompt = (
+            "당신은 건설/PC 분야 특허 분석 전문가입니다. 아래 특허에서 "
+            "target, problem, solution, components, stage, stages, method, "
+            "effect 키를 가진 특허 DNA JSON 으로만 응답하세요.\n"
+            f"특허명: {title}\n요약: {abstract}\n대표청구항: {claim}")
     return generate_json(prompt)
 
 
@@ -168,22 +144,32 @@ def narrate_timeline(timeline_summary: str) -> Optional[str]:
 
 # ----------------------------------------------------------- AI 특허 검토
 def review_patents(review_input: str) -> Optional[dict]:
-    prompt = f"""당신은 건설/PC 분야 특허 1차 검토 보조 도구입니다.
-법률 판단을 단정하지 말고 '검토 가능성', '확인 필요', '변리사 검토 필요'
-같은 참고 의견 수준으로만 표현하세요.
+    prompt = prompts.render("ai_review", review_input=review_input)
+    if prompt is None:
+        prompt = (
+            "당신은 건설/PC 분야 특허 1차 검토 보조 도구입니다. 법률 판단을 "
+            "단정하지 말고 참고 의견 수준으로만 표현하세요. most_risky_patents, "
+            "common_points, different_points, key_differentiators, "
+            "claim_check_points, design_around_points, review_comment 키를 "
+            f"가진 JSON 으로만 응답하세요.\n\n{review_input}")
+    return generate_json(prompt)
 
-{review_input}
 
-반드시 아래 JSON 형식으로만 응답하세요.
-{{
-  "most_risky_patents": ["가장 유사한 특허명과 이유"],
-  "common_points": ["내 아이디어와 공통 구성"],
-  "different_points": ["차이 구성"],
-  "key_differentiators": ["핵심 차별 포인트"],
-  "claim_check_points": ["청구항 확인 필요 문구"],
-  "design_around_points": ["회피설계 검토 포인트"],
-  "review_comment": "출원 검토 참고 의견 (단정 금지, 최종 법률 판단 아님 명시)"
-}}"""
+# ------------------------------------------------------- 청구항 초안 (보완안)
+def draft_claims(idea_title: str, idea_description: str,
+                 differentiators: str, prior_art: str) -> Optional[dict]:
+    prompt = prompts.render(
+        "claim_draft", idea_title=idea_title,
+        idea_description=idea_description, differentiators=differentiators,
+        prior_art=prior_art)
+    if prompt is None:
+        prompt = (
+            "당신은 건설/PC 분야 특허 출원 보조 도구입니다. 차별화를 반영한 "
+            "independent_claim, dependent_claims, method_claim, design_around, "
+            "notes 키를 가진 청구항 초안 JSON 으로만 응답하세요. 최종 법률 "
+            f"문서가 아닌 참고 초안입니다.\n아이디어명: {idea_title}\n"
+            f"설명: {idea_description}\n차별 포인트: {differentiators}\n"
+            f"유사특허 청구항 요지: {prior_art}")
     return generate_json(prompt)
 
 
