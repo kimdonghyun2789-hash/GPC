@@ -74,22 +74,46 @@ PATENT_FIELDS = [
 
 
 class MockKiprisAdapter:
-    """sample_patents.csv 기반 mock 어댑터."""
+    """샘플 데이터(데모) 기반 어댑터. 검색 범위(scope)에 따라 국내/해외 분리."""
 
     def __init__(self):
-        self._df: Optional[pd.DataFrame] = None
+        self._df = None          # 국내
+        self._df_os = None       # 해외
 
-    def _load(self) -> pd.DataFrame:
+    def _load(self, scope: str = "국내") -> pd.DataFrame:
         if self._df is None:
-            self._df = pd.read_csv(config.SAMPLE_CSV, dtype=str).fillna("")
-        return self._df
+            d = pd.read_csv(config.SAMPLE_CSV, dtype=str).fillna("")
+            if "origin" not in d.columns:
+                d["origin"] = "국내"
+            self._df = d
+        frames = []
+        if scope in ("국내", "국내+해외"):
+            frames.append(self._df)
+        if scope in ("해외", "국내+해외"):
+            frames.append(self._load_overseas())
+        if not frames:
+            frames = [self._df]
+        return pd.concat(frames, ignore_index=True)
 
-    def search(self, query: str, max_results: int = 30) -> List[dict]:
-        """검색식의 토큰과 특허 텍스트 토큰의 겹침 정도로 정렬해 반환.
+    def _load_overseas(self) -> pd.DataFrame:
+        if self._df_os is None:
+            path = config.DATA_DIR / "sample_patents_overseas.csv"
+            if path.exists():
+                d = pd.read_csv(path, dtype=str).fillna("")
+            else:
+                d = pd.DataFrame(columns=PATENT_FIELDS)
+            if "origin" not in d.columns:
+                d["origin"] = "해외"
+            self._df_os = d
+        return self._df_os
+
+    def search(self, query: str, max_results: int = 30,
+               scope: str = "국내") -> List[dict]:
+        """검색식 토큰과 특허 텍스트 토큰의 겹침 정도로 정렬해 반환.
 
         KIPRIS 검색식 구분자(* AND OR + 공백)를 모두 토큰으로 분해한다.
         """
-        df = self._load()
+        df = self._load(scope)
         q_tokens = set(tokenize(query.replace("*", " ").replace("+", " ")))
         if not q_tokens:
             return df.head(max_results).to_dict("records")
@@ -190,11 +214,14 @@ class RealKiprisAdapter:
             "technology_group": "",
         }
 
-    def search(self, query: str, max_results: int = 30) -> List[dict]:
+    def search(self, query: str, max_results: int = 30,
+               scope: str = "국내") -> List[dict]:
         """KIPRISPlus 자유검색. 응답 XML 의 <item> 을 PATENT_FIELDS 로 매핑.
 
-        주: 실제 응답에서 태그명이 다르면 _parse_item 의 후보 목록만 보완하면
-        된다. (응답 샘플 XML 을 한 번 확인하면 정확히 고정 가능)
+        scope: 현재 실연동은 국내(특허·실용신안)만 지원한다. 해외 검색은
+        KIPRIS 해외특허 서비스 연동이 필요하며, 미연동 시 국내 결과만 반환한다.
+        (TODO: 해외 오퍼레이션 연동)
+        주: 실제 응답에서 태그명이 다르면 _parse_item 의 후보 목록만 보완하면 된다.
         """
         cache_key = f"kipris_search::{query}::{max_results}"
         cached = cache_utils.cache_get(cache_key)
@@ -265,20 +292,23 @@ class KiprisClient:
             self.mode = "real"
 
     def search_multi(self, queries: List[str], per_query: int = 25,
-                     exclude_keywords: str = "") -> List[dict]:
+                     exclude_keywords: str = "", scope: str = "국내") -> List[dict]:
         """검색식 상위 3~5개를 실행하고 출원/공개/등록번호 기준으로 중복 제거.
 
-        동일 특허가 검색식마다 다른 번호(출원/공개/등록)로 잡히는 경우까지
-        합치기 위해 모든 식별번호를 정규화해 비교한다.
+        scope(국내/해외/국내+해외)는 검색 범위. 동일 특허가 검색식마다 다른
+        번호(출원/공개/등록)로 잡히는 경우까지 합치기 위해 식별번호를 정규화해 비교한다.
         """
         seen = set()
         merged: List[dict] = []
         excludes = [e.lower() for e in split_keywords(exclude_keywords)]
         for query in queries[:5]:
             try:
-                items = self.adapter.search(query, max_results=per_query)
+                items = self.adapter.search(query, max_results=per_query,
+                                            scope=scope)
             except RuntimeError:
                 continue
+            except TypeError:        # 구버전 어댑터 호환
+                items = self.adapter.search(query, max_results=per_query)
             for item in items:
                 keys = _dedup_keys(item)
                 if not keys or (seen & keys):

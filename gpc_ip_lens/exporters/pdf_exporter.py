@@ -104,7 +104,11 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
                images: Optional[dict] = None,
                claim_rows: Optional[list] = None,
                worklist: Optional[list] = None,
-               summary: Optional[dict] = None) -> bytes:
+               summary: Optional[dict] = None,
+               diff_rows: Optional[list] = None,
+               element_rows: Optional[list] = None,
+               draft: Optional[dict] = None,
+               idea_elements: Optional[list] = None) -> bytes:
     """분석 리포트 PDF 생성. bytes 반환 (file_path 지정 시 저장도).
 
     images: {"network": png bytes, "yearly": png bytes,
@@ -291,9 +295,44 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
     else:
         story.append(Paragraph("AI 검토 미실행", st["body"]))
 
-    # 7. 청구항 대비표 (선택)
+    # 6-2. 내 아이디어 핵심 구성요소
+    if idea_elements:
+        story.append(Paragraph("내 아이디어 핵심 구성요소", st["h2"]))
+        for e in idea_elements[:12]:
+            story.append(Paragraph(f"• {_clip(e, 90)}", st["body"]))
+
+    # 7. 아이디어-유사특허 차이 비교표 (핵심)
+    if diff_rows:
+        story.append(Paragraph("7. 아이디어-유사특허 차이 비교", st["h2"]))
+        data = [["비교 항목", "내 아이디어", "유사특허", "일치", "예비 리스크",
+                 "차별화", "보완 방향"]]
+        for r in diff_rows[:12]:
+            data.append([_clip(r.get("비교 항목", ""), 10),
+                         _clip(r.get("내 아이디어", ""), 22),
+                         _clip(r.get("유사특허", ""), 22),
+                         _clip(r.get("일치 여부", ""), 6),
+                         _clip(r.get("예비 리스크", ""), 6),
+                         _clip(r.get("차별화 가능성", ""), 6),
+                         _clip(r.get("보완 방향", ""), 24)])
+        story.append(_table(data, font,
+                            col_widths=[18 * mm, 32 * mm, 32 * mm, 12 * mm,
+                                        14 * mm, 12 * mm, 38 * mm]))
+
+    # 8. 구성요소 매칭표 (선택)
+    if element_rows:
+        story.append(Paragraph("8. 구성요소 매칭표", st["h2"]))
+        data = [["내 구성요소", "유사특허 청구항 구성", "일치", "차별화"]]
+        for r in element_rows[:14]:
+            data.append([_clip(r.get("내 아이디어 구성요소", ""), 22),
+                         _clip(r.get("유사특허 청구항 구성", ""), 40),
+                         _clip(r.get("일치 여부", ""), 6),
+                         _clip(r.get("차별화 가능성", ""), 6)])
+        story.append(_table(data, font,
+                            col_widths=[40 * mm, 78 * mm, 14 * mm, 14 * mm]))
+
+    # 9. 청구항 대비표 (선택)
     if claim_rows:
-        story.append(Paragraph("7. 청구항 대비표 (1위 유사특허)", st["h2"]))
+        story.append(Paragraph("9. 청구항 대비표 (1위 유사특허)", st["h2"]))
         data = [["특허 구성요소", "내 아이디어 대응", "코멘트"]]
         for r in claim_rows[:12]:
             data.append([_clip(r.get("특허 구성요소", ""), 40),
@@ -302,24 +341,45 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
         story.append(_table(data, font,
                             col_widths=[78 * mm, 28 * mm, 64 * mm]))
 
-    # 8. 검토 목록 (선택)
+    # 10. 청구항 초안 (선택)
+    if draft:
+        story.append(Paragraph("10. 청구항 초안 (참고)", st["h2"]))
+        story.append(Paragraph("[독립항]", st["body"]))
+        story.append(Paragraph(_clip(draft.get("independent_claim", "-"), 400),
+                               st["body"]))
+        deps = draft.get("dependent_claims") or []
+        if deps:
+            story.append(Paragraph("[종속항]", st["body"]))
+            for i, dc in enumerate(deps[:7], start=2):
+                story.append(Paragraph(f"{i}. {_clip(dc, 200)}", st["body"]))
+        if draft.get("method_claim"):
+            story.append(Paragraph("[방법항]", st["body"]))
+            story.append(Paragraph(_clip(draft.get("method_claim"), 300),
+                                   st["body"]))
+        da = draft.get("design_around") or []
+        if da:
+            story.append(Paragraph("[회피설계 대체안]", st["body"]))
+            for x in da[:4]:
+                story.append(Paragraph(f"• {_clip(x, 160)}", st["body"]))
+
+    # 11. 관심 특허 (선택)
     if worklist:
-        story.append(Paragraph("8. 검토 목록 (관심·주의 특허)", st["h2"]))
-        data = [["검토상태", "특허명", "출원인", "상태"]]
+        story.append(Paragraph("11. 관심 특허 (관리상태)", st["h2"]))
+        data = [["관리상태", "특허명", "출원인", "상태"]]
         for m in worklist[:20]:
-            data.append([m.get("review_status", "관심"),
+            data.append([m.get("watch_status") or m.get("review_status") or "관심",
                          _clip(m.get("title", ""), 40),
                          _clip(m.get("applicant", ""), 14),
                          m.get("status", "-") or "-"])
         story.append(_table(data, font,
-                            col_widths=[18 * mm, 88 * mm, 36 * mm, 16 * mm]))
+                            col_widths=[20 * mm, 86 * mm, 36 * mm, 16 * mm]))
 
-    # 참고 문구
-    story.append(Paragraph("참고 문구", st["h2"]))
+    # 변리사 검토 필요사항 / 면책 문구
+    story.append(Paragraph("변리사 검토 필요사항 · 면책", st["h2"]))
     story.append(Paragraph(
-        "본 리포트는 GPC 내부 검토용 참고 자료입니다. AI 분석 결과는 1차 "
-        "스크리닝 목적이며 최종 법률 판단이 아닙니다. 출원/실시 결정 전 "
-        "변리사 등 전문가의 검토와 추가 선행기술 조사가 필요합니다.", st["small"]))
+        "본 리포트는 내부 1차 검토용 참고 자료입니다. AI/규칙 분석 결과는 1차 "
+        "스크리닝 목적이며 최종 법률 판단이 아닙니다. 권리범위 충돌 가능성·신규성·"
+        "진보성은 변리사 검토와 추가 선행기술 조사가 필요합니다.", st["small"]))
 
     doc.build(story)
     data = buf.getvalue()
@@ -328,6 +388,6 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
     return data
 
 
-def default_export_path(prefix: str = "gpc_ip_lens_report") -> str:
+def default_export_path(prefix: str = "ip3_report") -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     return str(config.EXPORTS_DIR / f"{prefix}_{ts}.pdf")

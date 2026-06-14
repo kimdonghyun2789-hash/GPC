@@ -7,6 +7,7 @@ import hashlib
 import html as _html
 import io
 import json
+from datetime import datetime
 
 st_html_escape = _html.escape
 
@@ -17,6 +18,8 @@ import streamlit as st
 
 from analyzers import ai_review as review_mod
 from analyzers import claim_chart
+from analyzers import claim_draft as draft_mod
+from analyzers import diff_compare
 from analyzers import element_match
 from analyzers import keyword_expander
 from analyzers import network_map as netmap
@@ -43,15 +46,15 @@ try:
 except Exception as exc:  # DB 오류 시 사용자 안내
     st.error(f"데이터베이스 초기화 오류: {exc}. db 폴더 권한을 확인하세요.")
 
-# 메뉴 (key, 한글 라벨, 아이콘) — 실무형 IP 검토 플랫폼 6메뉴
+# 메뉴 (key, 한글 라벨, 아이콘) — 실무형 IP 1차 검토 도구 6메뉴
 NAV_GROUPS = [
     ("", [
-        ("Home", "홈", ":material/home:"),
         ("New Review", "새 아이디어 검토", ":material/lightbulb:"),
         ("Review Cases", "검토 결과함", ":material/folder_open:"),
         ("Watchlist", "관심 특허", ":material/bookmark:"),
         ("Monitoring", "모니터링", ":material/radar:"),
-        ("Reports", "리포트 · 설정", ":material/description:")]),
+        ("Reports", "리포트", ":material/description:"),
+        ("Settings", "설정", ":material/settings:")]),
 ]
 
 DEMO_IDEA = {
@@ -232,17 +235,18 @@ def render_patent_detail(p: dict, idea_dna: dict):
         url = p.get("kipris_url") or ""
         if url:
             st.markdown(f"[KIPRIS 원문 보기]({url})")
-        # 검토 상태 워크리스트
+        # 관심특허 관리상태 (검토 케이스 상태와 별개)
         app_no = p.get("application_no", "")
-        opts = ["없음"] + db.REVIEW_STATUSES
-        cur = db.get_review_status(app_no) or "없음"
+        opts = ["없음"] + db.WATCH_STATUSES
+        cur = db.get_watch_status(app_no) or "없음"
         sel = st.selectbox(
-            "검토 상태", opts, index=opts.index(cur) if cur in opts else 0,
+            "관리상태", opts, index=opts.index(cur) if cur in opts else 0,
             key=f"rs_{app_no}",
-            help="관심/확인필요/주의/제외 — 기록·관심특허와 보고서에 반영됩니다.")
+            help="관심/확인필요/주의/제외/출원참고/회피필요/무효자료후보 — "
+                 "'관심 특허'와 리포트에 반영됩니다.")
         if sel != cur:
-            db.set_review_status(app_no, sel, p.get("title", ""),
-                                 p.get("applicant", ""))
+            db.set_watch_status(app_no, sel, p.get("title", ""),
+                                p.get("applicant", ""))
             st.rerun()
     # 분할 점수 (문헌/청구항/문제/해결수단/효과/특허리스크)
     try:
@@ -279,10 +283,11 @@ def render_patent_detail(p: dict, idea_dna: dict):
 
 # ============================================================ 검색 파이프라인
 def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
-                        per_query: int = 25, redirect: bool = True):
+                        per_query: int = 25, redirect: bool = True,
+                        scope: str = "국내"):
     """검색식 실행 → 중복제거 → 유사도 계산 → DB 저장 → 세션 반영.
 
-    redirect=True 면 완료 후 아이디어 검토로 이동(rerun). False 면 결과만 채우고
+    redirect=True 면 완료 후 검토 화면으로 이동(rerun). False 면 결과만 채우고
     True/False 를 반환한다(통합 검토 플로우에서 후속 단계 진행용).
     """
     client = KiprisClient()
@@ -291,14 +296,13 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
         st.error("실행할 검색식이 없습니다. 검색어 확장을 먼저 실행하세요.")
         return False
 
-    with st.spinner(f"KIPRIS 검색 실행 중 ({client.mode} 모드, "
-                    f"검색식 {len(queries)}개)..."):
+    with st.spinner(f"유사특허 검색 중 (검색식 {len(queries)}개, 범위 {scope})..."):
         try:
             patents = client.search_multi(
                 queries, per_query=per_query,
-                exclude_keywords=idea.get("exclude_keywords", ""))
+                exclude_keywords=idea.get("exclude_keywords", ""), scope=scope)
         except Exception as exc:
-            st.error(f"KIPRIS 검색 실패: {exc}")
+            st.error(f"유사특허 검색 실패: {exc}")
             return False
     if not patents:
         st.warning("검색 결과가 없습니다. 검색식을 수정해 보세요.")
@@ -346,77 +350,6 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
         st.success(f"검색 완료: {len(df)}건 수집.")
         st.rerun()
     return True
-
-
-# ============================================================ 0. Dashboard
-def page_dashboard():
-    df = get_results_df()
-    try:
-        worklist = db.list_bookmarks()
-    except Exception:
-        worklist = []
-    s = monitoring.dashboard_stats(df if not df.empty else None, worklist)
-
-    # 헤더 + 마지막 업데이트 + 새로고침
-    hc1, hc2 = st.columns([3, 1])
-    with hc1:
-        ui.page_header("홈",
-                       "검토 현황과 관심 기술·특허의 최신 변화를 한눈에 봅니다.")
-    with hc2:
-        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-        st.caption(f"마지막 업데이트 · {s['updated']}")
-        if st.button("새로고침", icon=":material/refresh:",
-                     use_container_width=True):
-            st.rerun()
-
-    # 핵심 지표 카드 (2행 4열)
-    r1 = st.columns(4)
-    r1[0].metric("전체 관심 특허", f"{s['watch_total']}건")
-    r1[1].metric("신규 공개", f"{s['new_published']}건")
-    r1[2].metric("신규 등록", f"{s['new_registered']}건")
-    r1[3].metric("최근 신규 유사", f"{s['new_similar_30d']}건")
-    r2 = st.columns(4)
-    r2[0].metric("경쟁사 신규 출원", f"{s['competitor_new']}곳")
-    r2[1].metric("위험도 높은 특허", f"{s['high_risk']}건")
-    r2[2].metric("검토 필요", f"{s['review_needed']}건")
-    ac = monitoring.alert_counts()
-    r2[3].metric("신규 알림", f"{sum(ac.values())}건")
-
-    # 차트 영역
-    st.markdown("##### 관심 기술 동향")
-    c1, c2 = st.columns([3, 2])
-    c1.plotly_chart(px.line(monitoring.yearly_trend(), x="연도", y="건수",
-                            markers=True, title="월별/연도별 신규 특허 추이"),
-                    use_container_width=True)
-    c2.plotly_chart(px.pie(monitoring.status_distribution(), names="상태",
-                           values="건수", hole=0.55, title="상태별 분포"),
-                    use_container_width=True)
-
-    # 리스트 영역: 신규 유사 / 알림
-    l1, l2 = st.columns(2)
-    with l1:
-        st.markdown("##### 내 아이디어와 유사한 신규 특허 Top 5")
-        src = df.head(5) if not df.empty else pd.DataFrame(
-            monitoring.recent_patents(5))
-        if not df.empty:
-            tbl = pd.DataFrame({"관련도": src["total_score"],
-                                "특허명": src["title"],
-                                "출원인": src["applicant"],
-                                "상태": src["status"]})
-        else:
-            tbl = pd.DataFrame({"특허명": src["title"],
-                                "출원인": src["applicant"],
-                                "상태": src["status"],
-                                "출원일": src["application_date"]})
-        st.dataframe(tbl, hide_index=True, use_container_width=True)
-        if st.button("새 아이디어 검토", icon=":material/lightbulb:"):
-            goto("New Review")
-    with l2:
-        st.markdown("##### 최근 알림")
-        for a in monitoring.alerts()[:6]:
-            st.markdown(ui.alert_row(a), unsafe_allow_html=True)
-        if st.button("모니터링 전체 보기", icon=":material/radar:"):
-            goto("Monitoring")
 
 
 # ============================================================ 2. Patent Radar
@@ -868,34 +801,119 @@ def _reconstruct_results(rows: list, idea_dna: dict = None) -> list:
     return results
 
 
-# ============================================================ 10. Export Center
-def page_export_center():
-    ui.page_header("보고서 · 내보내기",
-                   "분석 결과를 Excel · PDF · 이미지로 내보냅니다.")
-    df = require_results()
+# ============================================================ 10. 리포트
+REPORT_SECTIONS = ["1페이지 요약", "내 아이디어 구성요소", "유사특허 TOP 5",
+                   "아이디어-유사특허 차이 비교", "구성요소 매칭표",
+                   "청구항 대비표", "차별성·보완", "청구항 초안",
+                   "통계·도면 이미지", "관심 특허"]
+
+
+def _recent_reports():
+    """data/exports 의 최근 리포트 파일 목록."""
+    try:
+        files = sorted(config.EXPORTS_DIR.glob("ip3_report_*.*"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        return files[:10]
+    except Exception:
+        return []
+
+
+def _build_report_kwargs(df, idea, include):
+    """세션/스냅샷에서 리포트에 넣을 데이터를 모은다(포함 항목 필터)."""
+    idea_dna = idea.get("idea_dna", {})
+    kwargs = {}
+    if "내 아이디어 구성요소" in include:
+        kwargs["idea_elements"] = (ss_get("idea_elements")
+                                   or element_match.decompose_idea(idea, idea_dna))
+    if "아이디어-유사특허 차이 비교" in include:
+        rows = ss_get("diffc_rows")
+        if not rows and len(df):
+            rows = diff_compare.build_diff_table(
+                idea, idea_dna, df.iloc[0].to_dict())
+        kwargs["diff_rows"] = rows
+    if "구성요소 매칭표" in include:
+        rows = ss_get("em_rows")
+        if not rows and len(df):
+            rows, _ = element_match.match(idea, idea_dna, df.iloc[0].to_dict())
+        kwargs["element_rows"] = rows
+    if "청구항 대비표" in include and len(df):
+        kwargs["claim_rows"], _ = claim_chart.build_claim_chart(
+            idea, idea_dna, df.iloc[0].to_dict())
+    if "청구항 초안" in include:
+        draft = ss_get("draft_result")
+        if not draft and len(df):
+            d = draft_mod.build_differentiation(idea, idea_dna,
+                                                df.head(5).to_dict("records"))
+            draft, _ = draft_mod.draft(idea, idea_dna, d,
+                                       df.head(5).to_dict("records"))
+        kwargs["draft"] = draft
+    if "관심 특허" in include:
+        try:
+            kwargs["worklist"] = db.list_bookmarks()
+        except Exception:
+            kwargs["worklist"] = None
+    return kwargs
+
+
+def page_reports():
+    ui.page_header("리포트",
+                   "검토 결과를 차이 비교 중심 리포트(PDF·Excel)로 내보냅니다.")
+
+    # 1) 리포트 대상 선택 (현재 세션 / 저장된 케이스)
+    src = st.radio("리포트 대상", ["현재 검토 결과", "저장된 검토 케이스"],
+                   horizontal=True)
+    if src == "저장된 검토 케이스":
+        cases = db.list_review_cases()
+        if not cases:
+            st.info("저장된 검토 케이스가 없습니다.")
+        else:
+            labels = {f"[{str(c.get('created_at'))[:10]}] {c.get('title')} "
+                      f"({c.get('status')})": c for c in cases}
+            pick = st.selectbox("케이스 선택", list(labels.keys()))
+            if st.button("이 케이스 불러오기", key="rep_load"):
+                c = labels[pick]
+                full = db.get_review_case(c["id"]) or {}
+                if c.get("idea_id") and _load_case_into_session(
+                        c["idea_id"], full.get("snapshot", {})):
+                    st.session_state["review_case_id"] = c["id"]
+                    st.session_state["case_status"] = c.get("status", "검토중")
+                    st.session_state["case_verdict"] = c.get("final_verdict", "")
+                    st.success("불러왔습니다. 아래에서 리포트를 생성하세요.")
+                    st.rerun()
+                else:
+                    st.warning("이 케이스에는 복원할 결과가 없습니다.")
+
+    df = get_results_df()
     if df.empty:
+        st.info("리포트로 만들 검토 결과가 없습니다. '새 아이디어 검토'를 먼저 "
+                "실행하거나 저장된 케이스를 불러오세요.")
+        _render_recent_reports()
         return
+
     idea = ss_get("idea", {})
     review = ss_get("review")
-    timeline_lines = ss_get("timeline_lines")
-    if timeline_lines is None:
-        timeline_lines, _ = timeline_mod.fallback_narrative(df), "fallback"
-        timeline_lines = timeline_lines if isinstance(timeline_lines, list) else []
+    scope = idea.get("scope", "국내")
+    basis = "샘플 데이터(데모)" if config.use_mock_data() else "KIPRIS 실데이터"
+    st.caption(f"대상: {idea.get('title') or '-'} · 검색 범위 {scope} · "
+               f"데이터 기준 {basis}")
+
+    # 2) 포함 항목 선택
+    include = st.multiselect("리포트 포함 항목", REPORT_SECTIONS,
+                             default=REPORT_SECTIONS)
+    rich = "통계·도면 이미지" in include
+
     queries = (ss_get("expansion") or {}).get("search_queries", [])
     top_n = ss_get("top_n", 10)
+    timeline_lines = ss_get("timeline_lines")
+    if timeline_lines is None:
+        tl = timeline_mod.fallback_narrative(df)
+        timeline_lines = tl if isinstance(tl, list) else []
 
-    rich = st.toggle("PDF에 도면·네트워크맵·차트 이미지 포함", value=True,
-                     help="이미지 변환(kaleido)이 없으면 도면만 포함됩니다.")
-
-    def build_report_images():
-        imgs = {}
-        # 대표도면은 PIL 로 항상 생성 가능
-        imgs["drawings"] = [
+    def _images():
+        imgs = {"drawings": [
             (drawing_caption(r.to_dict()), placeholder_drawing(r.to_dict()))
             for _, r in df.head(6).iterrows()
-            if not str(r.get("drawing_url") or "").startswith("http")
-        ]
-        # 네트워크맵 / 차트는 kaleido 필요 (없으면 None → 건너뜀)
+            if not str(r.get("drawing_url") or "").startswith("http")]}
         fig = ss_get("network_fig") or netmap.make_time_network_figure(
             df, idea.get("title", ""))
         imgs["network"] = image_exporter.figure_to_png(fig)
@@ -904,85 +922,83 @@ def page_export_center():
         imgs["yearly"] = image_exporter.figure_to_png(yfig)
         return imgs
 
-    c1, c2, c3 = st.columns(3)
+    # 3) 요약 payload
+    conf_label, _, _ = review_confidence()
+    diff_res = ss_get("diff_result") or {}
+    rev = review or {}
+    summary = {
+        "confidence": conf_label,
+        "final_verdict": ss_get("case_verdict", ""),
+        "differentiators": (diff_res.get("differentiators")
+                            or rev.get("key_differentiators") or []),
+        "novelty_risk": rev.get("review_comment", ""),
+        "design_around": (rev.get("design_around_points")
+                          or (ss_get("draft_result") or {}).get("design_around")
+                          or []),
+    } if "1페이지 요약" in include else None
+
+    extra = _build_report_kwargs(df, idea, include)
+
+    c1, c2 = st.columns(2)
     with c1:
-        st.markdown("##### Excel")
-        try:
-            xlsx = excel_exporter.export_excel(df, idea, review)
-            st.download_button(
-                "Excel 다운로드", data=xlsx,
-                file_name="gpc_ip_lens_results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument"
-                     ".spreadsheetml.sheet", use_container_width=True)
-        except Exception as exc:
-            st.error(f"Excel 생성 실패: {exc}")
-    with c2:
-        st.markdown("##### PDF 리포트")
-        try:
-            report_imgs = build_report_images() if rich else None
-            # 청구항 대비표(1위 특허) + 검토 목록 포함
-            claim_rows = None
-            if len(df):
-                top1 = df.iloc[0].to_dict()
-                claim_rows, _ = claim_chart.build_claim_chart(
-                    idea, idea.get("idea_dna", {}), top1)
+        if st.button("PDF 리포트 생성", type="primary",
+                     use_container_width=True):
             try:
-                worklist = db.list_bookmarks()
-            except Exception:
-                worklist = None
-            # 1페이지 요약 (검토 신뢰도/최종판단/차별/보완 방향)
-            conf_label, _, _ = review_confidence()
-            diff_res = ss_get("diff_result") or {}
-            rev = review or {}
-            differentiators = (diff_res.get("differentiators")
-                               or rev.get("key_differentiators") or [])
-            design_around = (rev.get("design_around_points")
-                             or (ss_get("draft_result") or {}).get("design_around")
-                             or [])
-            summary = {
-                "confidence": conf_label,
-                "final_verdict": ss_get("case_verdict", ""),
-                "differentiators": differentiators,
-                "novelty_risk": rev.get("review_comment", ""),
-                "design_around": design_around,
-            }
-            pdf = pdf_exporter.export_pdf(df, idea, queries, timeline_lines,
-                                          review, top_n, images=report_imgs,
-                                          claim_rows=claim_rows,
-                                          worklist=worklist, summary=summary)
-            st.download_button("PDF 다운로드", data=pdf,
-                               file_name="gpc_ip_lens_report.pdf",
-                               mime="application/pdf",
-                               use_container_width=True)
-        except Exception as exc:
-            st.error(f"PDF 생성 실패: {exc}")
-    with c3:
-        st.markdown("##### 네트워크맵 / 그래프")
-        fig = ss_get("network_fig")
-        if fig is None:
-            fig = netmap.make_time_network_figure(df, idea.get("title", ""))
-        data, fname, mime = image_exporter.export_figure(fig, "network_map")
-        if mime != "image/png":
-            st.caption("kaleido 미설치 — PNG 대신 HTML 로 내보냅니다.")
-        st.download_button("네트워크맵 다운로드", data=data, file_name=fname,
-                           mime=mime, use_container_width=True)
-        yearly_fig = px.line(stats.yearly_counts(df), x="연도", y="건수",
-                             markers=True, title="연도별 출원 추이")
-        data2, fname2, mime2 = image_exporter.export_figure(yearly_fig,
-                                                            "yearly_trend")
-        st.download_button("통계 그래프 다운로드", data=data2, file_name=fname2,
-                           mime=mime2, use_container_width=True)
+                with st.spinner("PDF 생성 중..."):
+                    pdf = pdf_exporter.export_pdf(
+                        df, idea, queries, timeline_lines, review, top_n,
+                        images=_images() if rich else None,
+                        summary=summary, **extra)
+                fname = f"ip3_report_{datetime.now():%Y%m%d_%H%M%S}.pdf"
+                try:
+                    (config.EXPORTS_DIR / fname).write_bytes(pdf)
+                except OSError:
+                    pass
+                st.download_button("PDF 다운로드", data=pdf, file_name=fname,
+                                   mime="application/pdf",
+                                   use_container_width=True)
+            except Exception as exc:
+                st.error(f"PDF 생성 실패: {exc}")
+    with c2:
+        if st.button("Excel 리포트 생성", use_container_width=True):
+            try:
+                xlsx = excel_exporter.export_excel(df, idea, review)
+                fname = f"ip3_report_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
+                try:
+                    (config.EXPORTS_DIR / fname).write_bytes(xlsx)
+                except OSError:
+                    pass
+                st.download_button(
+                    "Excel 다운로드", data=xlsx, file_name=fname,
+                    mime="application/vnd.openxmlformats-officedocument"
+                         ".spreadsheetml.sheet", use_container_width=True)
+            except Exception as exc:
+                st.error(f"Excel 생성 실패: {exc}")
+
+    st.caption("구성요소 매칭표·청구항 초안은 PDF 리포트에 포함됩니다. "
+               "리포트는 1차 검토 의견이며 최종 법률 판단이 아닙니다.")
 
     st.markdown("---")
-    st.markdown("##### 미리보기 — 유사특허 TOP N / AI 검토 요약")
-    st.dataframe(df.head(top_n)[["rank", "total_score", "title", "applicant",
-                                 "application_year", "status",
-                                 "technology_group"]],
-                 hide_index=True, use_container_width=True)
-    if review:
-        st.info(review.get("review_comment", "-"))
-    else:
-        st.caption("AI 검토를 실행하면 PDF/Excel 에 검토 요약이 포함됩니다.")
+    _render_recent_reports()
+
+
+def _render_recent_reports():
+    st.markdown("##### 최근 생성 리포트")
+    files = _recent_reports()
+    if not files:
+        st.caption("아직 생성된 리포트가 없습니다.")
+        return
+    for f in files:
+        col1, col2 = st.columns([3, 1])
+        col1.write(f"{f.name}  ·  {datetime.fromtimestamp(f.stat().st_mtime):%Y-%m-%d %H:%M}")
+        try:
+            mime = ("application/pdf" if f.suffix == ".pdf"
+                    else "application/vnd.openxmlformats-officedocument"
+                         ".spreadsheetml.sheet")
+            col2.download_button("다운로드", data=f.read_bytes(),
+                                 file_name=f.name, mime=mime, key=f"dl_{f.name}")
+        except OSError:
+            col2.caption("불러오기 실패")
 
 
 # ============================================================ 11. Settings
@@ -1056,19 +1072,50 @@ def page_settings():
             st.success("기본 가중치로 복원했습니다.")
 
     st.markdown("---")
+    st.markdown("##### 환경 상태")
     st.markdown(
-        f"- Gemini 사용 가능: **{'예' if gemini_service.is_available() else '아니오 (fallback 동작)'}**\n"
-        f"- 동작 모드: **{'Mock Data' if config.use_mock_data() else 'KIPRIS 실연동'}**\n"
+        f"- Gemini API: **{'사용 가능' if gemini_service.is_available() else '미설정 (키워드 기반 분석)'}**\n"
+        f"- 검색 데이터: **{'샘플 데이터(데모)' if config.use_mock_data() else 'KIPRIS 실데이터 연동'}**\n"
         f"- DB 경로: `{config.DB_PATH}`\n"
         f"- 샘플 데이터: `{config.SAMPLE_CSV}`")
-    st.markdown("---")
-    if st.button("브랜드 · UI 가이드 열기", icon=":material/palette:"):
-        goto("Brand Guide")
 
 
 # ===================================================== 새 아이디어 검토 (통합)
+ANALYSIS_KEYS = ("idea_elements", "diffc_rows", "diffc_for", "diffc_agg",
+                 "em_rows", "em_for", "em_method", "diff_result",
+                 "draft_result", "draft_method", "review", "review_method")
+
+
+def _collect_snapshot(idea: dict, method: str, scope: str) -> dict:
+    """현재 세션의 분석 결과를 케이스 snapshot 으로 수집(복원·리포트용)."""
+    snap = {"idea_dna": idea.get("idea_dna", {}),
+            "expansion_method": method, "scope": scope}
+    for k in ANALYSIS_KEYS:
+        v = ss_get(k)
+        if v is not None:
+            snap[k] = v
+    return snap
+
+
+def persist_case_snapshot():
+    """버튼으로 생성된 분석(매칭표·차별성·초안 등)을 케이스에 저장."""
+    case_id = ss_get("review_case_id")
+    if not case_id:
+        return
+    idea = ss_get("idea", {})
+    snap = _collect_snapshot(idea, ss_get("expansion_method", ""),
+                             idea.get("scope", "국내"))
+    try:
+        db.update_review_case(case_id, snapshot=snap)
+    except Exception:
+        pass
+
+
 def run_full_review(idea: dict, top_n: int, scope: str):
-    """[검토 시작] 한 번으로 검색어 확장 → 검색 → 유사도 → 케이스 저장."""
+    """[검토 시작] 한 번으로 검색어 확장 → 검색 → 유사도 → 차이 비교 → 케이스 저장."""
+    # 이전 분석 잔재 제거(새 검토 시작)
+    for k in ANALYSIS_KEYS:
+        st.session_state.pop(k, None)
     with st.spinner("검색어 확장 중..."):
         expansion, method = keyword_expander.expand(
             idea.get("title", ""), idea.get("description", ""),
@@ -1077,11 +1124,22 @@ def run_full_review(idea: dict, top_n: int, scope: str):
     st.session_state["expansion_method"] = method
     st.session_state["idea"]["idea_dna"] = expansion.get("idea_dna", {})
 
-    ok = run_search_pipeline(idea, expansion, top_n, redirect=False)
+    ok = run_search_pipeline(idea, expansion, top_n, redirect=False, scope=scope)
     if not ok:
         return
 
     df = get_results_df()
+    idea_dna = idea.get("idea_dna", {})
+    results = ss_get("results", [])
+    # 핵심: 아이디어 구성요소 분해 + 차이 비교(요약)를 자동 수행해 저장
+    try:
+        st.session_state["idea_elements"] = element_match.decompose_idea(
+            idea, idea_dna)
+        st.session_state["diffc_agg"] = diff_compare.aggregate(
+            idea, idea_dna, results[:5])
+    except Exception:
+        pass
+
     conf_label, _, _ = review_confidence()
     high = int((df["total_score"] >= 70).sum()) if "total_score" in df else 0
     try:
@@ -1093,15 +1151,14 @@ def run_full_review(idea: dict, top_n: int, scope: str):
             "scope": scope, "top_n": top_n,
             "status": "검토중", "confidence": conf_label,
             "n_results": len(df), "high_risk": high,
-            "snapshot": {"idea_dna": idea.get("idea_dna", {}),
-                         "expansion_method": method},
+            "snapshot": _collect_snapshot(idea, method, scope),
         })
         st.session_state["review_case_id"] = case_id
     except Exception as exc:
         st.warning(f"검토 케이스 저장 중 오류 (분석은 계속 진행됩니다): {exc}")
 
-    st.success(f"검토 완료 · 유사특허 {len(df)}건 분석. 아래 탭에서 결과를 "
-               "확인하세요.")
+    st.success(f"검토 완료 · 유사특허 {len(df)}건 비교. 아래 '아이디어-특허 차이 "
+               "비교' 탭부터 확인하세요.")
     st.rerun()
 
 
@@ -1123,46 +1180,98 @@ def render_summary_tab():
             f"<div style='font-size:.74rem;color:#64788F;margin-top:4px'>{desc}"
             f"</div></div>", unsafe_allow_html=True)
 
+    scope = idea.get("scope", "국내")
+    basis = "샘플 데이터(데모)" if config.use_mock_data() else "KIPRIS 실데이터"
+    st.caption(f"검색 범위: {scope} · 데이터 기준: {basis}"
+               + ("" if scope == "국내" else " · 해외는 데모 샘플 기준"))
+
     k = st.columns(4)
     k[0].metric("유사특허", f"{len(df)}건")
     k[1].metric("최고 관련도", f"{sc.max():.0f}")
     k[2].metric("주의 (70+)", f"{int((sc >= 70).sum())}건")
     k[3].metric("평균 관련도", f"{sc.mean():.0f}")
 
-    # 최종 판단 / 검토 상태
+    # 최종 판단 / 검토 케이스 상태
     case_id = ss_get("review_case_id")
     if case_id:
         cur = ss_get("case_status", "검토중")
         opts = db.REVIEW_STATUSES
         c1, c2 = st.columns([1, 2])
-        sel = c1.selectbox("검토 상태", opts,
+        sel = c1.selectbox("검토 케이스 상태", opts,
                            index=opts.index(cur) if cur in opts else 1,
                            key="summary_status")
         verdict = c2.text_input("최종 판단 메모", value=ss_get("case_verdict", ""),
                                 key="summary_verdict",
-                                placeholder="예: 차별 포인트 2개 확보, 종속항 보완 후 출원 검토")
+                                placeholder="예: 차별 포인트 2개 확보, 종속항 보완 후 출원 후보")
         if st.button("검토 상태 저장", key="save_case_status"):
             db.update_review_case(case_id, status=sel, final_verdict=verdict)
             st.session_state["case_status"] = sel
             st.session_state["case_verdict"] = verdict
             st.success("저장했습니다. '검토 결과함'에 반영됩니다.")
 
-    st.markdown("##### 리스크 특허 TOP 5 (관련도 순)")
+    st.markdown("##### 예비 리스크 특허 TOP 5")
     head = df.head(5)
+    risk_col = head["claim_risk"] if "claim_risk" in head else head["total_score"]
     st.dataframe(pd.DataFrame({
-        "관련도": head["total_score"], "특허명": head["title"],
+        "예비 리스크": risk_col, "특허명": head["title"],
         "출원인": head["applicant"], "상태": head["status"],
-        "등급": head["total_score"].apply(sim_mod.grade)}),
+        "관련도": head["total_score"]}),
         hide_index=True, use_container_width=True)
-    st.caption("AI 검토는 최종 법률 판단이 아닌 1차 참고용입니다. 출원 전 변리사 "
+    st.caption("본 결과는 1차 검토 의견이며 최종 법률 판단이 아닙니다. 출원 전 변리사 "
                "검토를 권장합니다.")
 
 
-def render_element_match():
+def render_diff_compare_tab():
+    """핵심 화면: 내 아이디어 ↔ 유사특허 항목별 차이 비교."""
+    st.markdown("##### 아이디어 ↔ 유사특허 차이 비교")
+    st.caption(diff_compare.DISCLAIMER)
+    df = get_results_df()
+    if df.empty:
+        return
+    idea = ss_get("idea", {})
+    idea_dna = idea.get("idea_dna", {})
+    results = ss_get("results", [])
+
+    # 1) TOP N 종합 요약 (공통점/차이점/위험요소/차별 포인트)
+    agg = ss_get("diffc_agg") or diff_compare.aggregate(idea, idea_dna,
+                                                        results[:5])
+    a1, a2 = st.columns(2)
+    a1.markdown("**공통 항목 (유사특허와 겹침 — 회피 검토 대상)**")
+    a1.markdown("\n".join(f"- {x}" for x in (agg.get("공통_항목") or ["-"])))
+    a2.markdown("**차이 항목 (차별 포인트 후보)**")
+    a2.markdown("\n".join(f"- {x}" for x in (agg.get("차이_항목") or ["-"])))
+    if agg.get("위험_요소"):
+        st.warning("예비 리스크 높은 항목: " + ", ".join(agg["위험_요소"]))
+
+    # 2) 특허별 항목 비교표
     st.markdown("---")
+    st.markdown("**유사특허별 항목 비교** (내 아이디어와 어디가 같고 다른지)")
+    options = {f"{int(r['rank'])}위 [{r.get('claim_risk', r['total_score']):.0f}] "
+               f"{r['title']}": r["application_no"]
+               for _, r in df.head(20).iterrows()}
+    choice = st.selectbox("비교할 유사특허", list(options.keys()),
+                          key="diffc_pick")
+    app_no = options[choice]
+    p = df[df["application_no"] == app_no].iloc[0].to_dict()
+    rows = diff_compare.build_diff_table(idea, idea_dna, p)
+    st.session_state["diffc_rows"] = rows
+    st.session_state["diffc_for"] = app_no
+    summ = diff_compare.summary(rows)
+    m = st.columns(4)
+    m[0].metric("일치", summ["일치"])
+    m[1].metric("부분일치", summ["부분일치"])
+    m[2].metric("차이(차별 후보)", summ["차이"])
+    m[3].metric("미확인", summ["미확인"])
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    if not str(p.get("representative_claim", "")).strip():
+        st.caption("이 특허는 청구항 원문 미확보 — '청구항 구성'은 예비 검토입니다.")
+    persist_case_snapshot()
+
+
+def render_element_match():
     st.markdown("##### 구성요소 매칭표")
-    st.caption("내 아이디어 구성요소가 유사특허 청구항에 존재하는지 비교합니다. "
-               "침해/유효성 판단이 아닌 1차 참고용입니다.")
+    st.caption("내 아이디어 구성요소가 유사특허 청구항/요약에 존재하는지 비교합니다. "
+               "권리범위 충돌 단정이 아닌 1차 검토 의견입니다.")
     df = get_results_df()
     if df.empty:
         return
@@ -1179,6 +1288,9 @@ def render_element_match():
         st.session_state["em_rows"] = rows
         st.session_state["em_for"] = app_no
         st.session_state["em_method"] = method
+        st.session_state["idea_elements"] = element_match.decompose_idea(
+            idea, idea_dna)
+        persist_case_snapshot()
     if ss_get("em_rows") and ss_get("em_for") == app_no:
         rows = ss_get("em_rows")
         summ = element_match.summary(rows)
@@ -1190,43 +1302,67 @@ def render_element_match():
         st.dataframe(pd.DataFrame(rows), hide_index=True,
                      use_container_width=True)
         if ss_get("em_method") == "fallback":
-            st.caption("Gemini 미사용 — 규칙 기반 구성요소 매칭 결과입니다.")
+            st.caption("Gemini 미사용 — 키워드 기반 매칭 결과입니다.")
 
 
-def render_differentiation_tab():
-    from analyzers import claim_draft as draft_mod
+def render_diff_solution_tab():
+    """차별성 · 보완안 (AI 1차 검토 + 차별 포인트). 청구항 초안은 별도 탭."""
     page_ai_review()
     st.markdown("---")
-    st.markdown("##### 차별성 · 보완 아이디어 · 청구항 초안")
+    st.markdown("##### 차별성 · 보완 아이디어")
     st.caption(draft_mod.DISCLAIMER)
     df = get_results_df()
     if df.empty:
         return
     idea = ss_get("idea", {})
     idea_dna = idea.get("idea_dna", {})
-    if st.button("차별성 · 청구항 초안 생성", key="gen_draft"):
+    if st.button("차별성 · 보완 방향 도출", key="gen_diff"):
         top = df.head(5).to_dict("records")
-        with st.spinner("차별 포인트 도출 및 청구항 초안 작성 중..."):
-            diff = draft_mod.build_differentiation(idea, idea_dna, top)
-            draft, method = draft_mod.draft(idea, idea_dna, diff, top)
-        st.session_state["diff_result"] = diff
-        st.session_state["draft_result"] = draft
-        st.session_state["draft_method"] = method
+        with st.spinner("차별 포인트 도출 중..."):
+            st.session_state["diff_result"] = draft_mod.build_differentiation(
+                idea, idea_dna, top)
+        persist_case_snapshot()
     diff = ss_get("diff_result")
-    draft = ss_get("draft_result")
-    if not (diff and draft):
+    if not diff:
+        st.info("[차별성 · 보완 방향 도출]을 누르면 공통/차이 기반 차별 포인트를 "
+                "제안합니다.")
         return
     c1, c2 = st.columns(2)
-    c1.markdown("**핵심 차별 포인트**")
+    c1.markdown("**핵심 차별 포인트 (보완 아이디어 후보)**")
     for d in (diff.get("differentiators") or ["-"]):
         c1.markdown(f"- {d}")
     if diff.get("stage_differentiators"):
         c1.markdown("**차별 공정단계**: " +
                     ", ".join(diff["stage_differentiators"]))
-    c2.markdown("**유사특허와 공통 구성 (회피 대상)**")
+    c2.markdown("**유사특허와 공통 구성 (회피 검토 대상)**")
     for d in (diff.get("common_points") or ["-"]):
         c2.markdown(f"- {d}")
 
+
+def render_claim_draft_tab():
+    """청구항 초안 (독립항/종속항/방법항/회피설계)."""
+    st.markdown("##### 청구항 초안")
+    st.caption(draft_mod.DISCLAIMER)
+    df = get_results_df()
+    if df.empty:
+        return
+    idea = ss_get("idea", {})
+    idea_dna = idea.get("idea_dna", {})
+    if st.button("청구항 초안 생성", key="gen_draft"):
+        top = df.head(5).to_dict("records")
+        diff = ss_get("diff_result") or draft_mod.build_differentiation(
+            idea, idea_dna, top)
+        st.session_state["diff_result"] = diff
+        with st.spinner("청구항 초안 작성 중..."):
+            draft, method = draft_mod.draft(idea, idea_dna, diff, top)
+        st.session_state["draft_result"] = draft
+        st.session_state["draft_method"] = method
+        persist_case_snapshot()
+    draft = ss_get("draft_result")
+    if not draft:
+        st.info("[청구항 초안 생성]을 누르면 차별 포인트를 반영한 독립항·종속항·"
+                "방법항·회피설계 초안을 제안합니다.")
+        return
     st.markdown("**독립항 초안**")
     st.code(draft.get("independent_claim", "-"), language=None)
     st.markdown("**종속항 초안**")
@@ -1258,37 +1394,44 @@ def render_report_tab():
         f"- **유사특허**: {len(df)}건 · 최고 관련도 {sc.max():.0f} · "
         f"주의(70+) {int((sc >= 70).sum())}건\n"
         f"- **최종 판단(메모)**: {ss_get('case_verdict', '') or '미작성'}")
-    st.markdown("**리스크 특허 TOP 5**")
+    st.markdown("**예비 리스크 특허 TOP 5**")
     head = df.head(5)
+    risk_col = head["claim_risk"] if "claim_risk" in head else head["total_score"]
     st.dataframe(pd.DataFrame({
-        "관련도": head["total_score"], "특허명": head["title"],
+        "예비 리스크": risk_col, "특허명": head["title"],
         "출원인": head["applicant"], "상태": head["status"]}),
         hide_index=True, use_container_width=True)
-    st.info("Excel · PDF 전체 리포트는 **리포트 · 설정** 메뉴에서 내보낼 수 있습니다.")
-    if st.button("리포트 · 설정으로 이동", icon=":material/description:",
+    st.info("Excel · PDF 전체 리포트는 **리포트** 메뉴에서 내보낼 수 있습니다.")
+    if st.button("리포트로 이동", icon=":material/description:",
                  key="goto_reports_from_tab"):
         goto("Reports")
 
 
 def render_review_tabs():
-    tabs = st.tabs(["요약", "유사특허", "청구항 대비", "차별성·보완안",
-                    "통계·동향", "도면", "리포트"])
+    tabs = st.tabs(["요약", "아이디어-특허 차이 비교", "구성요소 매칭표",
+                    "유사특허", "청구항 대비", "차별성·보완안", "청구항 초안",
+                    "리포트"])
     st.session_state["_no_header"] = True
     try:
         with tabs[0]:
             render_summary_tab()
         with tabs[1]:
-            page_patent_radar()
+            render_diff_compare_tab()
         with tabs[2]:
-            page_patent_dna()
             render_element_match()
         with tabs[3]:
-            render_differentiation_tab()
+            page_patent_radar()
+            with st.expander("통계 · 동향 (보조)"):
+                page_landscape(flat=True)
+            with st.expander("대표도면 (보조)"):
+                page_drawing_intelligence()
         with tabs[4]:
-            page_landscape(flat=True)
+            page_patent_dna()
         with tabs[5]:
-            page_drawing_intelligence()
+            render_diff_solution_tab()
         with tabs[6]:
+            render_claim_draft_tab()
+        with tabs[7]:
             render_report_tab()
     finally:
         st.session_state["_no_header"] = False
@@ -1296,11 +1439,15 @@ def render_review_tabs():
 
 def page_new_review():
     ui.page_header("새 아이디어 검토",
-                   "아이디어를 입력하면 유사특허 검색부터 청구항 리스크·차별성까지 "
-                   "한 번에 검토합니다.")
+                   "아이디어를 입력하면 유사특허와의 차이 비교·차별화·청구항 초안까지 "
+                   "한 번에 1차 검토합니다.")
+    notes = []
     if not gemini_service.is_available():
-        st.info("Gemini API Key 미설정 — 검색어 확장·AI 검토는 키워드 기반으로 "
-                "동작합니다. (리포트·설정에서 키 입력)")
+        notes.append("Gemini API 미설정 — 키워드 기반 분석으로 동작 (설정에서 키 입력)")
+    if config.use_mock_data():
+        notes.append("KIPRIS 실데이터 미사용 — 샘플 데이터(데모) 기준")
+    if notes:
+        st.info(" · ".join(notes))
 
     idea = ss_get("idea", {})
     with st.container(border=True):
@@ -1320,7 +1467,12 @@ def page_new_review():
                 value=idea.get("exclude_keywords", ""),
                 placeholder=DEMO_IDEA["exclude_keywords"])
         with c2:
-            scope = st.selectbox("검색 범위", ["국내", "해외", "국내+해외"])
+            scope = st.selectbox("검색 범위", ["국내", "해외", "국내+해외"],
+                                 help="국내=KIPRIS 특허·실용신안 기준. 해외는 "
+                                 "현재 샘플 데이터(데모) 기준이며 실 해외 API 연동은 "
+                                 "향후 지원 예정입니다.")
+            if scope != "국내":
+                st.caption("※ 해외 검색은 데모 샘플 기준 (실 해외 API 미연동)")
             top_n = st.select_slider("유사특허 TOP N", options=[5, 10, 20, 50],
                                      value=ss_get("top_n", 10))
             st.markdown("<div style='height:6px'></div>",
@@ -1354,30 +1506,38 @@ def page_new_review():
 
 
 # ============================================================ 검토 결과함
-def _load_case_into_session(idea_id: int):
-    """검토 케이스(idea_id)의 저장된 검색 결과를 세션으로 복원."""
+def _load_case_into_session(idea_id: int, snapshot: dict = None):
+    """검토 케이스(idea_id)의 저장된 검색 결과 + 분석 snapshot 을 세션으로 복원."""
     rows = db.load_idea_results(idea_id)
     if not rows:
         return False
     ideas = {i["id"]: i for i in db.list_ideas(200)}
     meta = ideas.get(idea_id, {})
+    snapshot = snapshot or {}
     try:
         idea_dna = json.loads(meta.get("idea_dna_json") or "{}")
     except (json.JSONDecodeError, TypeError):
         idea_dna = {}
+    if not idea_dna:
+        idea_dna = snapshot.get("idea_dna", {})
     results = _reconstruct_results(rows, idea_dna)
     st.session_state["idea"] = {
         "title": meta.get("title", ""),
         "description": meta.get("description", ""),
         "keywords": meta.get("keywords", ""),
         "exclude_keywords": meta.get("exclude_keywords", ""),
+        "scope": snapshot.get("scope", "국내"),
         "idea_dna": idea_dna}
     st.session_state["results"] = results
     st.session_state["results_df"] = stats.to_dataframe(results)
     st.session_state["top_n"] = min(10, len(results))
     st.session_state["selected_patent"] = results[0]["application_no"]
-    for k in ("review", "timeline_lines", "claim_chart", "em_rows"):
+    # 이전 세션 분석 제거 후, 저장된 snapshot 분석 복원
+    for k in ("timeline_lines", "claim_chart") + ANALYSIS_KEYS:
         st.session_state.pop(k, None)
+    for k in ANALYSIS_KEYS:
+        if k in snapshot:
+            st.session_state[k] = snapshot[k]
     return True
 
 
@@ -1422,7 +1582,10 @@ def page_review_cases():
     b1, b2, b3 = st.columns(3)
     if b1.button("이 케이스 불러오기", type="primary",
                  icon=":material/folder_open:"):
-        if case.get("idea_id") and _load_case_into_session(case["idea_id"]):
+        full = db.get_review_case(case["id"]) or {}
+        snapshot = full.get("snapshot", {})
+        if case.get("idea_id") and _load_case_into_session(case["idea_id"],
+                                                           snapshot):
             st.session_state["review_case_id"] = case["id"]
             st.session_state["case_status"] = case.get("status", "검토중")
             st.session_state["case_verdict"] = case.get("final_verdict", "")
@@ -1444,24 +1607,24 @@ def page_review_cases():
 # ============================================================ 관심 특허
 def page_watchlist():
     ui.page_header("관심 특허",
-                   "검토 상태를 지정한 특허를 모아 기술군별 포트폴리오로 봅니다.")
+                   "관리상태를 지정한 특허를 모아 기술군별로 봅니다.")
     try:
         marks = db.list_bookmarks()
     except Exception:
         marks = []
     if not marks:
-        st.info("관심 특허가 없습니다. 검토 결과의 특허 상세에서 '검토 상태'를 "
+        st.info("관심 특허가 없습니다. 검토 결과의 특허 상세에서 '관리상태'를 "
                 "지정하면 여기에 모입니다.")
         return
 
     tab1, tab2 = st.tabs(["목록", "포트폴리오"])
     with tab1:
-        flt = st.multiselect("상태 필터", db.REVIEW_STATUSES,
-                             default=db.REVIEW_STATUSES)
+        flt = st.multiselect("관리상태 필터", db.WATCH_STATUSES,
+                             default=db.WATCH_STATUSES)
         view = [m for m in marks
-                if (m.get("review_status") or "검토중") in flt]
+                if (m.get("watch_status") or "관심") in flt]
         bm = pd.DataFrame([{
-            "검토상태": m.get("review_status") or "검토중",
+            "관리상태": m.get("watch_status") or "관심",
             "특허명": m.get("title") or "-",
             "출원인": m.get("applicant") or "-",
             "출원번호": m.get("application_no"),
@@ -1477,7 +1640,7 @@ def page_watchlist():
         rm = c1.selectbox("목록에서 제거할 특허",
                           [m["application_no"] for m in marks])
         if c2.button("목록에서 제거"):
-            db.set_review_status(rm, "없음")
+            db.set_watch_status(rm, "없음")
             st.rerun()
         if len(bm):
             st.download_button(
@@ -1487,7 +1650,7 @@ def page_watchlist():
     with tab2:
         pf = pd.DataFrame([{
             "기술군": m.get("technology_group") or "기타",
-            "검토상태": m.get("review_status") or "검토중",
+            "관리상태": m.get("watch_status") or "관심",
             "특허명": m.get("title") or "-",
             "출원인": m.get("applicant") or "-",
             "상태": m.get("status") or "-"} for m in marks])
@@ -1505,8 +1668,13 @@ def page_monitoring():
                    "관심 조건을 등록하고, 신규 출원·경쟁사·알림을 한 곳에서 봅니다.")
     tab1, tab2, tab3 = st.tabs(["현황", "경쟁사", "관심 조건 · 알림"])
 
+    mock_note = ("샘플 데이터(데모) 기준" if config.use_mock_data()
+                 else "KIPRIS 실데이터 기준")
     with tab1:
-        st.caption(f"마지막 업데이트 · {monitoring.last_updated()}")
+        st.caption(f"마지막 업데이트 · {monitoring.last_updated()} · {mock_note}")
+        if config.use_mock_data():
+            st.info("아래 현황/동향은 샘플 데이터(데모) 기반 참고용입니다. "
+                    "관심 조건 등록·신규 감지는 '관심 조건 · 알림' 탭에서 동작합니다.")
         c1, c2 = st.columns(2)
         c1.plotly_chart(px.bar(monitoring.ipc_distribution(), x="IPC", y="건수",
                                title="IPC/CPC별 분포"),
@@ -1523,6 +1691,7 @@ def page_monitoring():
             hide_index=True, use_container_width=True)
 
     with tab2:
+        st.caption(mock_note)
         comp = monitoring.competitor_table(10)
         st.plotly_chart(px.bar(comp.head(8), x="경쟁사", y="총 출원",
                                title="경쟁사별 출원 건수"),
@@ -1600,75 +1769,14 @@ def page_monitoring():
             st.markdown(ui.alert_row(a), unsafe_allow_html=True)
 
 
-# ============================================================ 리포트 · 설정
-def page_reports_settings():
-    ui.page_header("리포트 · 설정",
-                   "분석 결과를 내보내고, API Key·데이터 모드·기준을 관리합니다.")
-    tab1, tab2 = st.tabs(["리포트", "설정"])
-    with tab1:
-        st.session_state["_no_header"] = True
-        try:
-            page_export_center()
-        finally:
-            st.session_state["_no_header"] = False
-    with tab2:
-        st.session_state["_no_header"] = True
-        try:
-            page_settings()
-        finally:
-            st.session_state["_no_header"] = False
-
-
-# ============================================================ 브랜드 / UI 가이드
-def page_brand_guide():
-    if st.button("← 리포트 · 설정으로", key="bg_back"):
-        goto("Reports")
-    ui.page_header("브랜드 · UI 가이드",
-                   "IP³ 디자인 시스템 — 로고·컬러·컴포넌트 가이드.")
-    logo = ui._logo_uri(64, "color")
-    if logo:
-        st.markdown(f"<img src='{logo}' style='height:48px'/>",
-                    unsafe_allow_html=True)
-    st.markdown("##### 컬러 팔레트")
-    pal = [("Primary", ui.PRIMARY), ("Bright", ui.BRIGHT),
-           ("Deep Navy", ui.NAVY), ("Slate", ui.SLATE),
-           ("Light Gray", ui.LIGHT_GRAY)]
-    sw = " ".join(
-        f"<div style='display:inline-block;text-align:center;margin-right:10px'>"
-        f"<div style='width:64px;height:44px;border-radius:8px;background:{c};"
-        f"border:1px solid #E4E8F0'></div><div style='font-size:.7rem;"
-        f"color:#475569;margin-top:4px'>{n}<br>{c}</div></div>" for n, c in pal)
-    st.markdown(sw, unsafe_allow_html=True)
-    st.markdown("##### 배지")
-    st.markdown(
-        ui.badge_html("신규", "primary") + " " + ui.badge_html("등록", "success")
-        + " " + ui.badge_html("검토중", "warn") + " " + ui.badge_html("위험", "danger")
-        + " " + ui.status_badge("공개") + " " + ui.grade_badge("고유사/주의"),
-        unsafe_allow_html=True)
-    st.markdown("##### 버튼")
-    b1, b2, b3 = st.columns(3)
-    b1.button("Primary", type="primary", key="bg_p", use_container_width=True)
-    b2.button("Secondary", key="bg_s", use_container_width=True)
-    b3.button("아이콘", icon=":material/search:", key="bg_i",
-              use_container_width=True)
-    st.markdown("##### 카드 · 통계")
-    cc = st.columns(3)
-    cc[0].metric("통계 카드", "128", "예시")
-    cc[1].markdown(ui.info_card("정보 카드", "카드형 정보 블록입니다."),
-                   unsafe_allow_html=True)
-    cc[2].markdown(ui.alert_row({"type": "알림", "level": "중간",
-                                 "title": "알림 카드 예시", "message": "메시지",
-                                 "date": "2026-06-14"}), unsafe_allow_html=True)
-
-
 # ============================================================ 메인
 def main():
     ss = st.session_state
-    valid_pages = {"Home", "New Review", "Review Cases", "Watchlist",
-                   "Monitoring", "Reports"}
+    valid_pages = {"New Review", "Review Cases", "Watchlist",
+                   "Monitoring", "Reports", "Settings"}
     if "page" not in ss:
         qp = st.query_params.get("page")     # ?page=... 딥링크로 초기 화면 지정
-        ss["page"] = qp if qp in valid_pages else "Home"
+        ss["page"] = qp if qp in valid_pages else "New Review"
     if ss.get("_goto"):                      # 바로가기 버튼이 설정한 이동
         ss["page"] = ss.pop("_goto")
 
@@ -1695,15 +1803,14 @@ def main():
 
     ui.app_header()
     pages = {
-        "Home": page_dashboard,
         "New Review": page_new_review,
         "Review Cases": page_review_cases,
         "Watchlist": page_watchlist,
         "Monitoring": page_monitoring,
-        "Reports": page_reports_settings,
-        "Brand Guide": page_brand_guide,
+        "Reports": page_reports,
+        "Settings": page_settings,
     }
-    pages.get(ss["page"], page_dashboard)()
+    pages.get(ss["page"], page_new_review)()
 
 
 def goto(page_key: str):

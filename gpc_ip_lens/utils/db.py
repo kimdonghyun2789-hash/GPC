@@ -248,16 +248,29 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 """
 
 
-# 검토 상태 7종 (한글 UI / 내부 enum). 관심특허·검토케이스 공통 사용.
+# 검토 케이스 상태 7종 (검토 결과함 전용).
 REVIEW_STATUSES = ["초안", "검토중", "보완필요", "출원후보",
                    "변리사검토", "보류", "제외"]
-STATUS_ENUM = {
+REVIEW_STATUS_ENUM = {
     "초안": "DRAFT", "검토중": "REVIEWING", "보완필요": "NEED_REVISION",
     "출원후보": "PATENT_CANDIDATE", "변리사검토": "ATTORNEY_REVIEW",
     "보류": "HOLD", "제외": "EXCLUDED",
 }
-# 구버전 상태값 → 신버전 매핑 (기존 DB 호환)
-_LEGACY_STATUS = {"관심": "검토중", "확인필요": "보완필요", "주의": "변리사검토"}
+# 관심특허(관리) 상태 7종 (관심 특허 화면 전용 — 검토 케이스 상태와 분리).
+WATCH_STATUSES = ["관심", "확인필요", "주의", "제외",
+                  "출원참고", "회피필요", "무효자료후보"]
+WATCH_STATUS_ENUM = {
+    "관심": "WATCH", "확인필요": "CHECK", "주의": "CAUTION", "제외": "EXCLUDED",
+    "출원참고": "FILING_REF", "회피필요": "DESIGN_AROUND",
+    "무효자료후보": "INVALIDATION_REF",
+}
+# 구버전/검토케이스 상태값 → 관심특허 상태값 매핑 (기존 bookmarks 데이터 보존).
+_WATCH_MIGRATE = {
+    "검토중": "관심", "초안": "관심", "보완필요": "확인필요",
+    "변리사검토": "주의", "보류": "확인필요", "출원후보": "출원참고",
+}
+# 하위호환 별칭(기존 코드가 STATUS_ENUM 을 참조할 수 있어 유지)
+STATUS_ENUM = REVIEW_STATUS_ENUM
 
 
 def _ensure_bookmarks(conn):
@@ -265,16 +278,16 @@ def _ensure_bookmarks(conn):
     # status 컬럼 마이그레이션 (기존 DB 호환)
     cols = [r[1] for r in conn.execute("PRAGMA table_info(bookmarks)").fetchall()]
     if "status" not in cols:
-        conn.execute("ALTER TABLE bookmarks ADD COLUMN status TEXT DEFAULT '검토중'")
-    # 구버전 상태값을 신버전으로 일괄 변환
-    for old, new in _LEGACY_STATUS.items():
+        conn.execute("ALTER TABLE bookmarks ADD COLUMN status TEXT DEFAULT '관심'")
+    # 기존 상태값(검토케이스/구버전)을 관심특허 상태값으로 일괄 변환(데이터 보존)
+    for old, new in _WATCH_MIGRATE.items():
         conn.execute("UPDATE bookmarks SET status = ? WHERE status = ?",
                      (new, old))
 
 
-def set_review_status(application_no: str, status: str, title: str = "",
-                      applicant: str = "") -> None:
-    """검토 상태 저장. status='없음'이면 목록에서 제거."""
+def set_watch_status(application_no: str, status: str, title: str = "",
+                     applicant: str = "") -> None:
+    """관심특허(관리) 상태 저장. status='없음'이면 목록에서 제거."""
     conn = get_connection()
     try:
         _ensure_bookmarks(conn)
@@ -293,7 +306,7 @@ def set_review_status(application_no: str, status: str, title: str = "",
         conn.close()
 
 
-def get_review_status(application_no: str):
+def get_watch_status(application_no: str):
     conn = get_connection()
     try:
         _ensure_bookmarks(conn)
@@ -305,8 +318,8 @@ def get_review_status(application_no: str):
         conn.close()
 
 
-def status_map() -> dict:
-    """{application_no: status} 전체 매핑 (표 표시·필터용)."""
+def watch_status_map() -> dict:
+    """{application_no: 관심상태} 전체 매핑 (표 표시·필터용)."""
     conn = get_connection()
     try:
         _ensure_bookmarks(conn)
@@ -315,6 +328,12 @@ def status_map() -> dict:
         return {r["application_no"]: r["status"] for r in rows}
     finally:
         conn.close()
+
+
+# 하위호환 별칭 (기존 호출부 안전)
+set_review_status = set_watch_status
+get_review_status = get_watch_status
+status_map = watch_status_map
 
 
 # --------------------------------------------------------------- bookmarks
@@ -363,7 +382,7 @@ def list_bookmarks() -> list:
     try:
         _ensure_bookmarks(conn)
         rows = conn.execute(
-            "SELECT b.application_no, b.note, b.status AS review_status,"
+            "SELECT b.application_no, b.note, b.status AS watch_status,"
             " b.created_at AS marked_at, p.* "
             "FROM bookmarks b LEFT JOIN patents p "
             "ON b.application_no = p.application_no "

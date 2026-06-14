@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""IP³ (IP Cube) - 모니터링 데이터 소스 (MVP: 더미/파생).
+"""IP³ - 모니터링 데이터 소스 (MVP: 샘플 데이터 파생).
 
-대시보드·기술 모니터링·경쟁사 분석·알림·포트폴리오 화면에 쓰는 데이터를
-제공한다. 현재는 sample_patents.csv(특허 유니버스)에서 결정적으로 파생하며,
+모니터링 화면(현황·경쟁사·알림)에 쓰는 데이터를 제공한다. 현재는
+sample_patents.csv(특허 유니버스)에서 결정적으로 파생하며(샘플/데모),
 추후 실제 KIPRIS 모니터링 API로 이 함수들의 내부만 교체하면 된다.
 
 데이터 구조(향후 API 연동 고려):
@@ -33,38 +33,10 @@ def last_updated() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-def dashboard_stats(results_df=None, worklist=None) -> dict:
-    """대시보드 상단 카드용 지표 (유니버스 기반 파생 + 현재 검색/관심 반영)."""
-    u = _load_universe()
-    max_y = int(u[u["year"] > 0]["year"].max()) if len(u) else 0
-    recent = u[u["year"] >= max_y - 1]              # 최근 ~2년을 '신규'로 간주
-    n_results = 0 if results_df is None else len(results_df)
-    risky = 0
-    if results_df is not None and "total_score" in results_df:
-        risky = int((results_df["total_score"] >= 70).sum())
-    n_watch = 0 if not worklist else len(worklist)
-    return {
-        "watch_total": n_watch,
-        "new_published": int((recent["status"] == "공개").sum()),
-        "new_registered": int((recent["status"] == "등록").sum()),
-        "new_similar_30d": n_results or int(len(recent)),
-        "competitor_new": int(recent.groupby("applicant").ngroups),
-        "high_risk": risky or int((u["status"] == "등록").sum() // 4),
-        "review_needed": n_watch or len(alerts()),
-        "updated": last_updated(),
-    }
-
-
 def yearly_trend() -> pd.DataFrame:
     u = _load_universe()
     s = u[u["year"] > 0].groupby("year").size()
     return s.reset_index(name="건수").rename(columns={"year": "연도"})
-
-
-def status_distribution() -> pd.DataFrame:
-    u = _load_universe()
-    s = u.groupby("status").size()
-    return s.reset_index(name="건수").rename(columns={"status": "상태"})
 
 
 def ipc_distribution(n: int = 8) -> pd.DataFrame:
