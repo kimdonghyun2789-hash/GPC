@@ -1,0 +1,21 @@
+# 비밀키
+.env
+
+# 런타임 생성물
+db/*.sqlite
+data/patent_cache/*.json
+data/drawings/*.png
+data/exports/*
+
+# 빌드
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# .gitkeep 은 유지
+!data/patent_cache/.gitkeep
+!data/drawings/.gitkeep
+!data/exports/.gitkeep
+!db/.gitkeep

@@ -1,0 +1,20 @@
+# GPC IP Lens - Python 3.11+
+streamlit>=1.36
+pandas>=2.0
+numpy>=1.26
+plotly>=5.20
+networkx>=3.2
+scikit-learn>=1.4
+requests>=2.31
+python-dotenv>=1.0
+google-generativeai>=0.7
+openpyxl>=3.1
+reportlab>=4.0
+pillow>=10.0
+
+# 그래프 PNG 내보내기 (선택 — 없으면 HTML 로 대체됨)
+# 0.2.1 로 고정: v1+ 는 외부 Chrome 설치를 요구해 단독 실행이 어려움
+kaleido==0.2.1
+
+# exe 빌드용 (개발 환경에만 필요)
+pyinstaller>=6.6
