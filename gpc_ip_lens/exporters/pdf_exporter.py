@@ -101,11 +101,15 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
                review: Optional[dict] = None,
                top_n: int = 10,
                file_path: Optional[str] = None,
-               images: Optional[dict] = None) -> bytes:
+               images: Optional[dict] = None,
+               claim_rows: Optional[list] = None,
+               worklist: Optional[list] = None) -> bytes:
     """분석 리포트 PDF 생성. bytes 반환 (file_path 지정 시 저장도).
 
     images: {"network": png bytes, "yearly": png bytes,
              "drawings": [(caption, png bytes), ...]} (선택)
+    claim_rows: 청구항 대비표 행 리스트 (선택)
+    worklist: 검토 목록 [{review_status,title,applicant,status}, ...] (선택)
     """
     images = images or {}
     font = _register_font()
@@ -245,8 +249,31 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
     else:
         story.append(Paragraph("AI 검토 미실행", st["body"]))
 
-    # 7. 참고 문구
-    story.append(Paragraph("7. 참고 문구", st["h2"]))
+    # 7. 청구항 대비표 (선택)
+    if claim_rows:
+        story.append(Paragraph("7. 청구항 대비표 (1위 유사특허)", st["h2"]))
+        data = [["특허 구성요소", "내 아이디어 대응", "코멘트"]]
+        for r in claim_rows[:12]:
+            data.append([_clip(r.get("특허 구성요소", ""), 40),
+                         _clip(r.get("내 아이디어 대응", ""), 8),
+                         _clip(r.get("코멘트", ""), 40)])
+        story.append(_table(data, font,
+                            col_widths=[78 * mm, 28 * mm, 64 * mm]))
+
+    # 8. 검토 목록 (선택)
+    if worklist:
+        story.append(Paragraph("8. 검토 목록 (관심·주의 특허)", st["h2"]))
+        data = [["검토상태", "특허명", "출원인", "상태"]]
+        for m in worklist[:20]:
+            data.append([m.get("review_status", "관심"),
+                         _clip(m.get("title", ""), 40),
+                         _clip(m.get("applicant", ""), 14),
+                         m.get("status", "-") or "-"])
+        story.append(_table(data, font,
+                            col_widths=[18 * mm, 88 * mm, 36 * mm, 16 * mm]))
+
+    # 참고 문구
+    story.append(Paragraph("참고 문구", st["h2"]))
     story.append(Paragraph(
         "본 리포트는 GPC 내부 검토용 참고 자료입니다. AI 분석 결과는 1차 "
         "스크리닝 목적이며 최종 법률 판단이 아닙니다. 출원/실시 결정 전 "

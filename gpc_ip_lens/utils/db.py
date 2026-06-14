@@ -218,6 +218,58 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 
 def _ensure_bookmarks(conn):
     conn.executescript(BOOKMARK_SCHEMA)
+    # status 컬럼 마이그레이션 (기존 DB 호환)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(bookmarks)").fetchall()]
+    if "status" not in cols:
+        conn.execute("ALTER TABLE bookmarks ADD COLUMN status TEXT DEFAULT '관심'")
+
+
+REVIEW_STATUSES = ["관심", "확인필요", "주의", "제외"]
+
+
+def set_review_status(application_no: str, status: str, title: str = "",
+                      applicant: str = "") -> None:
+    """검토 상태 저장. status='없음'이면 목록에서 제거."""
+    conn = get_connection()
+    try:
+        _ensure_bookmarks(conn)
+        if status in (None, "", "없음"):
+            conn.execute("DELETE FROM bookmarks WHERE application_no = ?",
+                         (application_no,))
+        else:
+            conn.execute(
+                "INSERT INTO bookmarks(application_no, title, applicant, note,"
+                " status, created_at) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(application_no) DO UPDATE SET status=excluded.status",
+                (application_no, title, applicant, "", status,
+                 datetime.now().isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_review_status(application_no: str):
+    conn = get_connection()
+    try:
+        _ensure_bookmarks(conn)
+        row = conn.execute(
+            "SELECT status FROM bookmarks WHERE application_no = ?",
+            (application_no,)).fetchone()
+        return row["status"] if row else None
+    finally:
+        conn.close()
+
+
+def status_map() -> dict:
+    """{application_no: status} 전체 매핑 (표 표시·필터용)."""
+    conn = get_connection()
+    try:
+        _ensure_bookmarks(conn)
+        rows = conn.execute(
+            "SELECT application_no, status FROM bookmarks").fetchall()
+        return {r["application_no"]: r["status"] for r in rows}
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------------------- bookmarks
@@ -266,7 +318,8 @@ def list_bookmarks() -> list:
     try:
         _ensure_bookmarks(conn)
         rows = conn.execute(
-            "SELECT b.application_no, b.note, b.created_at, p.* "
+            "SELECT b.application_no, b.note, b.status AS review_status,"
+            " b.created_at AS marked_at, p.* "
             "FROM bookmarks b LEFT JOIN patents p "
             "ON b.application_no = p.application_no "
             "ORDER BY b.created_at DESC").fetchall()

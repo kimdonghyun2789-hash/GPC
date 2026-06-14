@@ -238,15 +238,17 @@ def render_patent_detail(p: dict, idea_dna: dict):
         url = p.get("kipris_url") or ""
         if url:
             st.markdown(f"[KIPRIS 원문 보기]({url})")
+        # 검토 상태 워크리스트
         app_no = p.get("application_no", "")
-        marked = db.is_bookmarked(app_no) if app_no else False
-        blabel = "★ 관심 특허 해제" if marked else "☆ 관심 특허 추가"
-        if st.button(blabel, key=f"bm_{app_no}"):
-            if marked:
-                db.remove_bookmark(app_no)
-            else:
-                db.add_bookmark(app_no, p.get("title", ""),
-                                p.get("applicant", ""))
+        opts = ["없음"] + db.REVIEW_STATUSES
+        cur = db.get_review_status(app_no) or "없음"
+        sel = st.selectbox(
+            "검토 상태", opts, index=opts.index(cur) if cur in opts else 0,
+            key=f"rs_{app_no}",
+            help="관심/확인필요/주의/제외 — 기록·관심특허와 보고서에 반영됩니다.")
+        if sel != cur:
+            db.set_review_status(app_no, sel, p.get("title", ""),
+                                 p.get("applicant", ""))
             st.rerun()
     with st.expander("요약", expanded=True):
         st.write(p.get("abstract", "-"))
@@ -993,29 +995,33 @@ def page_history():
     with tab2:
         marks = db.list_bookmarks()
         if not marks:
-            st.info("관심 특허가 없습니다. Patent Radar 등에서 특허 상세의 "
-                    "'관심 특허 추가'로 담을 수 있습니다.")
+            st.info("검토 목록이 비어 있습니다. **유사특허 분석** 등에서 특허 상세의 "
+                    "'검토 상태'를 지정하면 여기에 모입니다.")
         else:
+            flt = st.multiselect("상태 필터", db.REVIEW_STATUSES,
+                                 default=db.REVIEW_STATUSES)
+            view = [m for m in marks if (m.get("review_status") or "관심") in flt]
             bm = pd.DataFrame([{
+                "검토상태": m.get("review_status") or "관심",
                 "특허명": m.get("title") or "-",
                 "출원인": m.get("applicant") or "-",
                 "출원번호": m.get("application_no"),
-                "상태": m.get("status") or "-",
+                "특허상태": m.get("status") or "-",
                 "기술군": m.get("technology_group") or "-",
                 "KIPRIS": m.get("kipris_url") or "",
-            } for m in marks])
+            } for m in view])
             st.dataframe(
                 bm, hide_index=True, use_container_width=True,
                 column_config={"KIPRIS": st.column_config.LinkColumn(
                     "KIPRIS", display_text="원문")})
             c1, c2 = st.columns([2, 1])
-            rm = c1.selectbox("해제할 특허",
+            rm = c1.selectbox("목록에서 제거할 특허",
                               [m["application_no"] for m in marks])
-            if c2.button("관심 특허 해제"):
-                db.remove_bookmark(rm)
+            if c2.button("목록에서 제거"):
+                db.set_review_status(rm, "없음")
                 st.rerun()
             st.download_button(
-                "관심 특허 Excel 다운로드",
+                "검토 목록 CSV 다운로드",
                 data=bm.to_csv(index=False).encode("utf-8-sig"),
                 file_name="gpc_bookmarks.csv", mime="text/csv")
 
@@ -1072,8 +1078,20 @@ def page_export_center():
         st.markdown("##### PDF 리포트")
         try:
             report_imgs = build_report_images() if rich else None
+            # 청구항 대비표(1위 특허) + 검토 목록 포함
+            claim_rows = None
+            if len(df):
+                top1 = df.iloc[0].to_dict()
+                claim_rows, _ = claim_chart.build_claim_chart(
+                    idea, idea.get("idea_dna", {}), top1)
+            try:
+                worklist = db.list_bookmarks()
+            except Exception:
+                worklist = None
             pdf = pdf_exporter.export_pdf(df, idea, queries, timeline_lines,
-                                          review, top_n, images=report_imgs)
+                                          review, top_n, images=report_imgs,
+                                          claim_rows=claim_rows,
+                                          worklist=worklist)
             st.download_button("PDF 다운로드", data=pdf,
                                file_name="gpc_ip_lens_report.pdf",
                                mime="application/pdf",

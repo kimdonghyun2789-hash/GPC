@@ -200,19 +200,31 @@ def analyze_uploaded_image(image_bytes: bytes, mime_type: str) -> Optional[str]:
 
 # ----------------------------------------------------------------- 임베딩
 def embed_texts(texts: List[str]) -> Optional[List[List[float]]]:
-    """Gemini 임베딩. 실패 시 None (호출부에서 TF-IDF fallback)."""
+    """Gemini 임베딩 (텍스트별 파일 캐시). 실패 시 None → TF-IDF fallback.
+
+    동일 텍스트는 캐시에서 재사용하여 재검색 시 API 호출/비용을 줄인다.
+    """
     if not is_available():
         return None
+    import hashlib
+    from utils import cache_utils
     try:
         genai.configure(api_key=config.get_gemini_api_key())
         vectors = []
         for text in texts:
+            snippet = (text or "")[:8000]
+            key = ("emb::" + EMBED_MODEL + "::"
+                   + hashlib.md5(snippet.encode("utf-8")).hexdigest())
+            cached = cache_utils.cache_get(key)
+            if isinstance(cached, list) and cached:
+                vectors.append(cached)
+                continue
             result = genai.embed_content(
-                model=EMBED_MODEL,
-                content=text[:8000],
-                task_type="semantic_similarity",
-            )
-            vectors.append(result["embedding"])
+                model=EMBED_MODEL, content=snippet,
+                task_type="semantic_similarity")
+            vec = result["embedding"]
+            cache_utils.cache_set(key, vec)
+            vectors.append(vec)
         return vectors
     except Exception:
         return None
