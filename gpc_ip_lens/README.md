@@ -48,6 +48,15 @@ streamlit run app.py
 python launcher.py
 ```
 
+## 더블클릭으로 실행하기 (exe 없이)
+
+Python 3.11+ 만 설치돼 있으면 아래 파일을 **더블클릭**하면 자동으로 필요한
+구성요소를 설치하고 브라우저가 열립니다. (최초 1회만 설치, 인터넷 필요)
+
+- 윈도우: `IP3_실행_윈도우.bat`
+- macOS: `IP3_실행_맥.command` (처음엔 우클릭 → "열기")
+- 리눅스: `IP3_실행_리눅스.sh`
+
 ## Mock Data 로 실행하기
 
 별도 설정 없이 바로 동작합니다. 기본값이 `USE_MOCK_DATA=true` 이며,
