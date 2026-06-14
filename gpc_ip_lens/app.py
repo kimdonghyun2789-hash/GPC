@@ -17,6 +17,7 @@ import streamlit as st
 
 from analyzers import ai_review as review_mod
 from analyzers import claim_chart
+from analyzers import element_match
 from analyzers import keyword_expander
 from analyzers import network_map as netmap
 from analyzers import patent_dna as dna_mod
@@ -42,39 +43,15 @@ try:
 except Exception as exc:  # DB 오류 시 사용자 안내
     st.error(f"데이터베이스 초기화 오류: {exc}. db 폴더 권한을 확인하세요.")
 
-MENU = [
-    "Idea Canvas", "Patent Radar", "Patent DNA", "Landscape",
-    "Drawing Intelligence", "AI Patent Review", "History",
-    "Export Center", "Settings",
-]
-# 사이드바 표시용 한글 라벨 (내부 키는 영문 유지 — 페이지 매핑/로직 불변)
-MENU_KO = {
-    "Idea Canvas": "아이디어 입력",
-    "Patent Radar": "유사특허 분석",
-    "Patent DNA": "특허 DNA 비교",
-    "Landscape": "통계 · 기술분석",
-    "Drawing Intelligence": "도면 분석",
-    "AI Patent Review": "AI 검토",
-    "History": "기록 · 관심특허",
-    "Export Center": "보고서 · 내보내기",
-    "Settings": "설정",
-}
-
-# 메뉴 그룹 (key, 한글 라벨, 아이콘) — IP 모니터링 SaaS 구조
+# 메뉴 (key, 한글 라벨, 아이콘) — 실무형 IP 검토 플랫폼 6메뉴
 NAV_GROUPS = [
-    ("모니터링", [
-        ("Dashboard", "대시보드", ":material/dashboard:"),
-        ("Tech Monitor", "기술 모니터링", ":material/radar:"),
-        ("Competitors", "경쟁사 분석", ":material/groups:"),
-        ("Alerts", "알림", ":material/notifications:")]),
-    ("분석", [
-        ("Patent Search", "특허 검색", ":material/search:"),
-        ("Idea Review", "아이디어 검토", ":material/lightbulb:"),
+    ("", [
+        ("Home", "홈", ":material/home:"),
+        ("New Review", "새 아이디어 검토", ":material/lightbulb:"),
+        ("Review Cases", "검토 결과함", ":material/folder_open:"),
         ("Watchlist", "관심 특허", ":material/bookmark:"),
-        ("Portfolio", "포트폴리오", ":material/folder:")]),
-    ("산출물", [
-        ("Reports", "리포트", ":material/description:")]),
-    ("", [("Settings", "설정", ":material/settings:")]),
+        ("Monitoring", "모니터링", ":material/radar:"),
+        ("Reports", "리포트 · 설정", ":material/description:")]),
 ]
 
 DEMO_IDEA = {
@@ -101,12 +78,29 @@ def get_results_df() -> pd.DataFrame:
 def require_results() -> pd.DataFrame:
     df = get_results_df()
     if df.empty:
-        st.info("아직 분석할 검색 결과가 없습니다. **특허 검색**에서 "
-                "아이디어·키워드를 입력·검색하면, 그 결과가 이 화면에 표시됩니다.")
-        if st.button("특허 검색으로 가기", type="primary",
-                     icon=":material/search:", key="goto_idea_empty"):
-            goto("Patent Search")
+        st.info("아직 분석할 검색 결과가 없습니다. **새 아이디어 검토**에서 "
+                "아이디어를 입력하고 [검토 시작]을 누르면 결과가 표시됩니다.")
+        if st.button("새 아이디어 검토로 가기", type="primary",
+                     icon=":material/lightbulb:", key="goto_idea_empty"):
+            goto("New Review")
     return df
+
+
+def review_confidence() -> tuple:
+    """검토 신뢰도 배지 (라벨, 설명, 톤) 산출.
+
+    Gemini=AI 신뢰도, KIPRIS 실데이터=검색 신뢰도, Mock=데모, fallback=누락가능.
+    """
+    gem = gemini_service.is_available()
+    mock = config.use_mock_data()
+    if gem and not mock:
+        return ("검토 신뢰도 높음", "Gemini AI 분석 + KIPRIS 실데이터", "success")
+    if gem and mock:
+        return ("AI 분석 · 데모 데이터", "Gemini AI 분석 · 표본(데모) 특허", "primary")
+    if not gem and not mock:
+        return ("검색 신뢰도 (키워드 분석)", "KIPRIS 실데이터 · 키워드 기반 분석",
+                "warn")
+    return ("데모 모드 (누락 가능)", "표본 데이터 · 키워드 기반 분석", "warn")
 
 
 def placeholder_drawing(patent: dict) -> bytes:
@@ -270,13 +264,17 @@ def render_patent_detail(p: dict, idea_dna: dict):
 
 # ============================================================ 검색 파이프라인
 def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
-                        per_query: int = 25):
-    """검색식 실행 → 중복제거 → 유사도 계산 → DB 저장 → 세션 반영."""
+                        per_query: int = 25, redirect: bool = True):
+    """검색식 실행 → 중복제거 → 유사도 계산 → DB 저장 → 세션 반영.
+
+    redirect=True 면 완료 후 아이디어 검토로 이동(rerun). False 면 결과만 채우고
+    True/False 를 반환한다(통합 검토 플로우에서 후속 단계 진행용).
+    """
     client = KiprisClient()
     queries = list(expansion.get("search_queries", []))[:5]
     if not queries:
         st.error("실행할 검색식이 없습니다. 검색어 확장을 먼저 실행하세요.")
-        return
+        return False
 
     with st.spinner(f"KIPRIS 검색 실행 중 ({client.mode} 모드, "
                     f"검색식 {len(queries)}개)..."):
@@ -286,10 +284,10 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
                 exclude_keywords=idea.get("exclude_keywords", ""))
         except Exception as exc:
             st.error(f"KIPRIS 검색 실패: {exc}")
-            return
+            return False
     if not patents:
         st.warning("검색 결과가 없습니다. 검색식을 수정해 보세요.")
-        return
+        return False
 
     with st.spinner(f"{len(patents)}건 유사도 분석 중..."):
         results = sim_mod.score_patents(idea, patents, expansion,
@@ -326,11 +324,13 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
     st.session_state["top_n"] = top_n
     st.session_state["selected_patent"] = (
         df.iloc[0]["application_no"] if len(df) else None)
-    st.session_state.pop("review", None)
-    st.session_state.pop("timeline_lines", None)
-    st.session_state["_goto"] = "Idea Review"
-    st.success(f"검색 완료: {len(df)}건 수집. '아이디어 검토'로 이동합니다.")
-    st.rerun()
+    for k in ("review", "timeline_lines", "claim_chart", "em_rows"):
+        st.session_state.pop(k, None)
+    if redirect:
+        st.session_state["_goto"] = "New Review"
+        st.success(f"검색 완료: {len(df)}건 수집.")
+        st.rerun()
+    return True
 
 
 # ============================================================ 0. Dashboard
@@ -345,8 +345,8 @@ def page_dashboard():
     # 헤더 + 마지막 업데이트 + 새로고침
     hc1, hc2 = st.columns([3, 1])
     with hc1:
-        ui.page_header("대시보드",
-                       "관심 기술·특허·경쟁사의 최신 변화를 한눈에 모니터링합니다.")
+        ui.page_header("홈",
+                       "검토 현황과 관심 기술·특허의 최신 변화를 한눈에 봅니다.")
     with hc2:
         st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
         st.caption(f"마지막 업데이트 · {s['updated']}")
@@ -394,124 +394,14 @@ def page_dashboard():
                                 "상태": src["status"],
                                 "출원일": src["application_date"]})
         st.dataframe(tbl, hide_index=True, use_container_width=True)
-        if st.button("특허 검색으로 이동", icon=":material/search:"):
-            goto("Patent Search")
+        if st.button("새 아이디어 검토", icon=":material/lightbulb:"):
+            goto("New Review")
     with l2:
         st.markdown("##### 최근 알림")
         for a in monitoring.alerts()[:6]:
             st.markdown(ui.alert_row(a), unsafe_allow_html=True)
-        if st.button("알림 전체 보기", icon=":material/notifications:"):
-            goto("Alerts")
-
-
-# ============================================================ 1. Idea Canvas
-def page_idea_canvas():
-    ui.page_header("특허 검색",
-                   "아이디어·키워드를 입력하고 검색어를 확장한 뒤 KIPRIS 검색을 실행합니다.")
-    if not gemini_service.is_available():
-        st.info("Gemini API Key 가 설정되어 있지 않습니다. 검색어 확장과 AI "
-                "분석은 키워드 기반으로 동작합니다. (Settings 에서 키 입력)")
-
-    idea = ss_get("idea", {})
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        title = st.text_input("아이디어명", value=idea.get("title", ""),
-                              placeholder=DEMO_IDEA["title"])
-        description = st.text_area("아이디어 설명", height=140,
-                                   value=idea.get("description", ""),
-                                   placeholder=DEMO_IDEA["description"])
-        keywords = st.text_input("핵심 키워드 (쉼표 구분)",
-                                 value=idea.get("keywords", ""),
-                                 placeholder=DEMO_IDEA["keywords"])
-        exclude = st.text_input("제외 키워드 (쉼표 구분)",
-                                value=idea.get("exclude_keywords", ""),
-                                placeholder=DEMO_IDEA["exclude_keywords"])
-    with col2:
-        scope = st.selectbox("검색 범위", ["국내 특허+실용신안", "국내 특허", "국내 실용신안"])
-        top_n = st.slider("유사특허 TOP N", 5, 30, ss_get("top_n", 10))
-        per_query = st.slider("검색식당 수집 건수", 10, 30, 25)
-        uploaded = st.file_uploader("아이디어 이미지/도면 업로드 (선택)",
-                                    type=["png", "jpg", "jpeg"])
-        if uploaded is not None:
-            st.image(uploaded, caption="업로드한 도면", use_container_width=True)
-            if gemini_service.is_available() and st.button("Gemini Vision 구성요소 추출"):
-                with st.spinner("이미지 분석 중..."):
-                    result = gemini_service.analyze_uploaded_image(
-                        uploaded.getvalue(), uploaded.type or "image/png")
-                st.markdown(result or "이미지 분석에 실패했습니다.")
-
-    st.session_state["idea"] = {
-        "title": title, "description": description, "keywords": keywords,
-        "exclude_keywords": exclude, "scope": scope,
-        "idea_dna": ss_get("idea", {}).get("idea_dna", {}),
-    }
-
-    b1, b2 = st.columns(2)
-    if b1.button("Gemini 검색어 확장", type="secondary",
-                 use_container_width=True):
-        if not (title or description or keywords):
-            st.error("아이디어명/설명/키워드 중 하나는 입력해야 합니다.")
-        else:
-            with st.spinner("검색어 확장 중..."):
-                expansion, method = keyword_expander.expand(
-                    title, description, keywords, exclude)
-            st.session_state["expansion"] = expansion
-            st.session_state["expansion_method"] = method
-            st.session_state["idea"]["idea_dna"] = expansion.get("idea_dna", {})
-            if method == "fallback":
-                st.warning("Gemini 호출 불가/실패 — 키워드 기반 fallback 검색식을 "
-                           "생성했습니다.")
-            else:
-                st.success("Gemini 검색어 확장 완료.")
-
-    expansion = ss_get("expansion")
-    if expansion:
-        st.markdown("---")
-        method = ss_get("expansion_method", "-")
-        st.markdown(f"#### 검색어 확장 결과 &nbsp;<span style='font-size:.8rem;"
-                    f"color:#93A0AE;font-weight:500'>({method})</span>",
-                    unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        c1.markdown(ui.info_card(
-            "국문 키워드",
-            ", ".join(expansion.get("korean_keywords", [])) or "-"),
-            unsafe_allow_html=True)
-        c2.markdown(ui.info_card(
-            "영문 키워드",
-            ", ".join(expansion.get("english_keywords", [])) or "-"),
-            unsafe_allow_html=True)
-        c3.markdown(ui.info_card(
-            "동의어 / 제외어",
-            (", ".join(expansion.get("synonyms", [])) or "-")
-            + "<br><span style='color:#64788F'>제외: "
-            + (", ".join(expansion.get("exclude_keywords", [])) or "-")
-            + "</span>"),
-            unsafe_allow_html=True)
-        groups_html = " ".join(ui.group_badge(g)
-                               for g in expansion.get("technology_groups", []))
-        st.markdown(f"<div style='margin-top:10px'><b>기술군 후보</b> &nbsp;"
-                    f"{groups_html or '-'}</div>", unsafe_allow_html=True)
-        with st.expander("아이디어 DNA", expanded=False):
-            st.json(expansion.get("idea_dna", {}))
-
-        st.markdown("**KIPRIS 검색식 후보** (직접 수정 가능, 한 줄에 1개, 최대 5개 실행)")
-        edited = st.text_area(
-            "검색식", value="\n".join(expansion.get("search_queries", [])),
-            height=120, label_visibility="collapsed")
-        expansion["search_queries"] = [
-            q.strip() for q in edited.splitlines() if q.strip()][:5]
-        st.session_state["expansion"] = expansion
-
-    if b2.button("KIPRIS 검색 실행", type="primary", use_container_width=True):
-        if not ss_get("expansion"):
-            # 확장 없이 바로 실행하면 자동으로 fallback 확장 수행
-            expansion, method = keyword_expander.expand(
-                title, description, keywords, exclude)
-            st.session_state["expansion"] = expansion
-            st.session_state["expansion_method"] = method
-            st.session_state["idea"]["idea_dna"] = expansion.get("idea_dna", {})
-        run_search_pipeline(st.session_state["idea"],
-                            st.session_state["expansion"], top_n, per_query)
+        if st.button("모니터링 전체 보기", icon=":material/radar:"):
+            goto("Monitoring")
 
 
 # ============================================================ 2. Patent Radar
@@ -929,7 +819,7 @@ def page_ai_review():
             unsafe_allow_html=True)
 
 
-# ============================================================ History
+# ============================================================ 결과 복원 유틸
 def _reconstruct_results(rows: list) -> list:
     """DB 행(load_idea_results) → 앱 results 포맷으로 복원."""
     results = []
@@ -949,88 +839,6 @@ def _reconstruct_results(rows: list) -> list:
     for rank, p in enumerate(results, start=1):
         p["rank"] = rank
     return results
-
-
-def page_history():
-    ui.page_header("기록 · 관심특허",
-                   "지난 분석을 다시 불러오거나 관심 특허를 모아 봅니다.")
-    tab1, tab2 = st.tabs(["검색 이력", "관심 특허"])
-
-    with tab1:
-        ideas = db.list_ideas()
-        if not ideas:
-            st.info("저장된 검색 이력이 없습니다. Idea Canvas 에서 검색을 "
-                    "실행하면 자동으로 기록됩니다.")
-        else:
-            hist = pd.DataFrame([{
-                "id": i["id"], "아이디어": i["title"],
-                "키워드": i["keywords"], "결과 수": i["n_results"],
-                "생성일시": str(i["created_at"])[:16].replace("T", " "),
-            } for i in ideas])
-            st.dataframe(hist.drop(columns=["id"]), hide_index=True,
-                         use_container_width=True)
-            labels = {f"[{i['created_at'][:10]}] {i['title']} "
-                      f"({i['n_results']}건)": i["id"] for i in ideas}
-            pick = st.selectbox("불러올 분석 선택", list(labels.keys()))
-            if st.button("이 분석 불러오기", type="primary"):
-                idea_id = labels[pick]
-                rows = db.load_idea_results(idea_id)
-                if not rows:
-                    st.warning("이 검색에는 저장된 결과가 없습니다.")
-                else:
-                    meta = next(i for i in ideas if i["id"] == idea_id)
-                    try:
-                        idea_dna = json.loads(meta.get("idea_dna_json") or "{}")
-                    except (json.JSONDecodeError, TypeError):
-                        idea_dna = {}
-                    results = _reconstruct_results(rows)
-                    st.session_state["idea"] = {
-                        "title": meta["title"], "description": meta["description"],
-                        "keywords": meta["keywords"],
-                        "exclude_keywords": meta["exclude_keywords"],
-                        "idea_dna": idea_dna}
-                    st.session_state["results"] = results
-                    st.session_state["results_df"] = stats.to_dataframe(results)
-                    st.session_state["top_n"] = min(10, len(results))
-                    st.session_state["selected_patent"] = \
-                        results[0]["application_no"]
-                    for k in ("review", "timeline_lines", "claim_chart"):
-                        st.session_state.pop(k, None)
-                    st.success(f"'{meta['title']}' 분석을 불러왔습니다 "
-                               f"({len(results)}건). 다른 메뉴에서 확인하세요.")
-
-    with tab2:
-        marks = db.list_bookmarks()
-        if not marks:
-            st.info("검토 목록이 비어 있습니다. **유사특허 분석** 등에서 특허 상세의 "
-                    "'검토 상태'를 지정하면 여기에 모입니다.")
-        else:
-            flt = st.multiselect("상태 필터", db.REVIEW_STATUSES,
-                                 default=db.REVIEW_STATUSES)
-            view = [m for m in marks if (m.get("review_status") or "관심") in flt]
-            bm = pd.DataFrame([{
-                "검토상태": m.get("review_status") or "관심",
-                "특허명": m.get("title") or "-",
-                "출원인": m.get("applicant") or "-",
-                "출원번호": m.get("application_no"),
-                "특허상태": m.get("status") or "-",
-                "기술군": m.get("technology_group") or "-",
-                "KIPRIS": m.get("kipris_url") or "",
-            } for m in view])
-            st.dataframe(
-                bm, hide_index=True, use_container_width=True,
-                column_config={"KIPRIS": st.column_config.LinkColumn(
-                    "KIPRIS", display_text="원문")})
-            c1, c2 = st.columns([2, 1])
-            rm = c1.selectbox("목록에서 제거할 특허",
-                              [m["application_no"] for m in marks])
-            if c2.button("목록에서 제거"):
-                db.set_review_status(rm, "없음")
-                st.rerun()
-            st.download_button(
-                "검토 목록 CSV 다운로드",
-                data=bm.to_csv(index=False).encode("utf-8-sig"),
-                file_name="gpc_bookmarks.csv", mime="text/csv")
 
 
 # ============================================================ 10. Export Center
@@ -1215,111 +1023,493 @@ def page_settings():
         goto("Brand Guide")
 
 
-# ============================================================ 아이디어 검토 (탭)
-def page_idea_review():
-    ui.page_header("아이디어 검토",
-                   "한 번의 검색 결과를 유사특허·DNA·통계·도면·AI 검토 탭으로 분석합니다.")
+# ===================================================== 새 아이디어 검토 (통합)
+def run_full_review(idea: dict, top_n: int, scope: str):
+    """[검토 시작] 한 번으로 검색어 확장 → 검색 → 유사도 → 케이스 저장."""
+    with st.spinner("검색어 확장 중..."):
+        expansion, method = keyword_expander.expand(
+            idea.get("title", ""), idea.get("description", ""),
+            idea.get("keywords", ""), idea.get("exclude_keywords", ""))
+    st.session_state["expansion"] = expansion
+    st.session_state["expansion_method"] = method
+    st.session_state["idea"]["idea_dna"] = expansion.get("idea_dna", {})
+
+    ok = run_search_pipeline(idea, expansion, top_n, redirect=False)
+    if not ok:
+        return
+
+    df = get_results_df()
+    conf_label, _, _ = review_confidence()
+    high = int((df["total_score"] >= 70).sum()) if "total_score" in df else 0
+    try:
+        case_id = db.save_review_case({
+            "idea_id": ss_get("idea_id"),
+            "title": idea.get("title") or "(제목 없는 아이디어)",
+            "description": idea.get("description", ""),
+            "keywords": idea.get("keywords", ""),
+            "scope": scope, "top_n": top_n,
+            "status": "검토중", "confidence": conf_label,
+            "n_results": len(df), "high_risk": high,
+            "snapshot": {"idea_dna": idea.get("idea_dna", {}),
+                         "expansion_method": method},
+        })
+        st.session_state["review_case_id"] = case_id
+    except Exception as exc:
+        st.warning(f"검토 케이스 저장 중 오류 (분석은 계속 진행됩니다): {exc}")
+
+    st.success(f"검토 완료 · 유사특허 {len(df)}건 분석. 아래 탭에서 결과를 "
+               "확인하세요.")
+    st.rerun()
+
+
+def render_summary_tab():
     df = get_results_df()
     if df.empty:
-        st.info("먼저 **특허 검색**에서 아이디어·키워드를 입력하고 검색하세요. "
-                "검색 결과가 이 화면의 모든 탭에 표시됩니다.")
-        if st.button("특허 검색으로 가기", type="primary",
-                     icon=":material/search:", key="goto_search_empty"):
-            goto("Patent Search")
         return
-    tabs = st.tabs(["유사특허", "특허 DNA", "통계 · 기술분석", "도면", "AI 검토"])
+    idea = ss_get("idea", {})
+    sc = df["total_score"]
+    label, desc, tone = review_confidence()
+
+    top = st.columns([3, 2])
+    with top[0]:
+        st.markdown(f"#### {idea.get('title') or '(제목 없는 아이디어)'}")
+        st.caption(idea.get("description", "") or "-")
+    with top[1]:
+        st.markdown(
+            f"<div style='text-align:right;margin-top:6px'>{ui.badge_html(label, tone)}"
+            f"<div style='font-size:.74rem;color:#64788F;margin-top:4px'>{desc}"
+            f"</div></div>", unsafe_allow_html=True)
+
+    k = st.columns(4)
+    k[0].metric("유사특허", f"{len(df)}건")
+    k[1].metric("최고 관련도", f"{sc.max():.0f}")
+    k[2].metric("주의 (70+)", f"{int((sc >= 70).sum())}건")
+    k[3].metric("평균 관련도", f"{sc.mean():.0f}")
+
+    # 최종 판단 / 검토 상태
+    case_id = ss_get("review_case_id")
+    if case_id:
+        cur = ss_get("case_status", "검토중")
+        opts = db.REVIEW_STATUSES
+        c1, c2 = st.columns([1, 2])
+        sel = c1.selectbox("검토 상태", opts,
+                           index=opts.index(cur) if cur in opts else 1,
+                           key="summary_status")
+        verdict = c2.text_input("최종 판단 메모", value=ss_get("case_verdict", ""),
+                                key="summary_verdict",
+                                placeholder="예: 차별 포인트 2개 확보, 종속항 보완 후 출원 검토")
+        if st.button("검토 상태 저장", key="save_case_status"):
+            db.update_review_case(case_id, status=sel, final_verdict=verdict)
+            st.session_state["case_status"] = sel
+            st.session_state["case_verdict"] = verdict
+            st.success("저장했습니다. '검토 결과함'에 반영됩니다.")
+
+    st.markdown("##### 리스크 특허 TOP 5 (관련도 순)")
+    head = df.head(5)
+    st.dataframe(pd.DataFrame({
+        "관련도": head["total_score"], "특허명": head["title"],
+        "출원인": head["applicant"], "상태": head["status"],
+        "등급": head["total_score"].apply(sim_mod.grade)}),
+        hide_index=True, use_container_width=True)
+    st.caption("AI 검토는 최종 법률 판단이 아닌 1차 참고용입니다. 출원 전 변리사 "
+               "검토를 권장합니다.")
+
+
+def render_element_match():
+    st.markdown("---")
+    st.markdown("##### 구성요소 매칭표")
+    st.caption("내 아이디어 구성요소가 유사특허 청구항에 존재하는지 비교합니다. "
+               "침해/유효성 판단이 아닌 1차 참고용입니다.")
+    df = get_results_df()
+    if df.empty:
+        return
+    idea = ss_get("idea", {})
+    idea_dna = idea.get("idea_dna", {})
+    options = {f"{int(r['rank'])}위 [{r['total_score']:.0f}] {r['title']}":
+               r["application_no"] for _, r in df.head(20).iterrows()}
+    choice = st.selectbox("대상 특허", list(options.keys()), key="em_pick")
+    app_no = options[choice]
+    p = df[df["application_no"] == app_no].iloc[0].to_dict()
+    if st.button("구성요소 매칭표 생성", key="gen_em"):
+        with st.spinner("아이디어를 구성요소로 분해·매칭 중..."):
+            rows, method = element_match.match(idea, idea_dna, p)
+        st.session_state["em_rows"] = rows
+        st.session_state["em_for"] = app_no
+        st.session_state["em_method"] = method
+    if ss_get("em_rows") and ss_get("em_for") == app_no:
+        rows = ss_get("em_rows")
+        summ = element_match.summary(rows)
+        m = st.columns(4)
+        m[0].metric("일치", summ["일치"])
+        m[1].metric("부분일치", summ["부분일치"])
+        m[2].metric("차이(차별 후보)", summ["차이"])
+        m[3].metric("미확인", summ["미확인"])
+        st.dataframe(pd.DataFrame(rows), hide_index=True,
+                     use_container_width=True)
+        if ss_get("em_method") == "fallback":
+            st.caption("Gemini 미사용 — 규칙 기반 구성요소 매칭 결과입니다.")
+
+
+def render_report_tab():
+    df = get_results_df()
+    if df.empty:
+        return
+    idea = ss_get("idea", {})
+    label, desc, _ = review_confidence()
+    sc = df["total_score"]
+    st.markdown("##### 1페이지 요약")
+    st.markdown(
+        f"- **아이디어명**: {idea.get('title') or '-'}\n"
+        f"- **검토일**: {pd.Timestamp.now():%Y-%m-%d}\n"
+        f"- **검토 신뢰도**: {label} ({desc})\n"
+        f"- **유사특허**: {len(df)}건 · 최고 관련도 {sc.max():.0f} · "
+        f"주의(70+) {int((sc >= 70).sum())}건\n"
+        f"- **최종 판단(메모)**: {ss_get('case_verdict', '') or '미작성'}")
+    st.markdown("**리스크 특허 TOP 5**")
+    head = df.head(5)
+    st.dataframe(pd.DataFrame({
+        "관련도": head["total_score"], "특허명": head["title"],
+        "출원인": head["applicant"], "상태": head["status"]}),
+        hide_index=True, use_container_width=True)
+    st.info("Excel · PDF 전체 리포트는 **리포트 · 설정** 메뉴에서 내보낼 수 있습니다.")
+    if st.button("리포트 · 설정으로 이동", icon=":material/description:",
+                 key="goto_reports_from_tab"):
+        goto("Reports")
+
+
+def render_review_tabs():
+    tabs = st.tabs(["요약", "유사특허", "청구항 대비", "차별성·보완안",
+                    "통계·동향", "도면", "리포트"])
     st.session_state["_no_header"] = True
     try:
         with tabs[0]:
-            page_patent_radar()
+            render_summary_tab()
         with tabs[1]:
-            page_patent_dna()
+            page_patent_radar()
         with tabs[2]:
-            page_landscape(flat=True)
+            page_patent_dna()
+            render_element_match()
         with tabs[3]:
-            page_drawing_intelligence()
-        with tabs[4]:
             page_ai_review()
+        with tabs[4]:
+            page_landscape(flat=True)
+        with tabs[5]:
+            page_drawing_intelligence()
+        with tabs[6]:
+            render_report_tab()
     finally:
         st.session_state["_no_header"] = False
 
 
-# ============================================================ 기술 모니터링
-def page_tech_monitor():
-    ui.page_header("기술 모니터링",
-                   "관심 기술 분야의 최신 출원 현황을 모니터링합니다. (MVP: 표본 데이터)")
-    st.caption(f"마지막 업데이트 · {monitoring.last_updated()}")
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(px.bar(monitoring.ipc_distribution(), x="IPC", y="건수",
-                           title="IPC/CPC별 분포"), use_container_width=True)
-    c2.plotly_chart(px.line(monitoring.yearly_trend(), x="연도", y="건수",
-                            markers=True, title="연도별 신규 출원 추이"),
-                    use_container_width=True)
-    st.markdown("##### 최근 신규 특허")
-    rec = pd.DataFrame(monitoring.recent_patents(10))
-    st.dataframe(pd.DataFrame({
-        "특허명": rec["title"], "출원인": rec["applicant"],
-        "상태": rec["status"], "출원일": rec["application_date"],
-        "기술군": rec["technology_group"]}),
-        hide_index=True, use_container_width=True)
-    st.info("관심 키워드·IPC·기술군을 등록하면 해당 조건의 신규 특허를 모아 "
-            "보여주는 구조입니다. (등록은 관심 특허 화면 / 실데이터는 KIPRIS 연동 후)")
+def page_new_review():
+    ui.page_header("새 아이디어 검토",
+                   "아이디어를 입력하면 유사특허 검색부터 청구항 리스크·차별성까지 "
+                   "한 번에 검토합니다.")
+    if not gemini_service.is_available():
+        st.info("Gemini API Key 미설정 — 검색어 확장·AI 검토는 키워드 기반으로 "
+                "동작합니다. (리포트·설정에서 키 입력)")
+
+    idea = ss_get("idea", {})
+    with st.container(border=True):
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            title = st.text_input("아이디어명", value=idea.get("title", ""),
+                                  placeholder=DEMO_IDEA["title"])
+            description = st.text_area(
+                "아이디어 설명", height=120,
+                value=idea.get("description", ""),
+                placeholder=DEMO_IDEA["description"])
+            keywords = st.text_input(
+                "핵심 키워드 (쉼표 구분)", value=idea.get("keywords", ""),
+                placeholder=DEMO_IDEA["keywords"])
+            exclude = st.text_input(
+                "제외 키워드 (쉼표 구분)",
+                value=idea.get("exclude_keywords", ""),
+                placeholder=DEMO_IDEA["exclude_keywords"])
+        with c2:
+            scope = st.selectbox("검색 범위", ["국내", "해외", "국내+해외"])
+            top_n = st.select_slider("유사특허 TOP N", options=[5, 10, 20, 50],
+                                     value=ss_get("top_n", 10))
+            st.markdown("<div style='height:6px'></div>",
+                        unsafe_allow_html=True)
+            start = st.button("검토 시작", type="primary",
+                              use_container_width=True,
+                              icon=":material/play_arrow:")
+            demo = st.button("데모 아이디어 채우기", use_container_width=True,
+                             icon=":material/auto_awesome:")
+
+    if demo:
+        st.session_state["idea"] = dict(DEMO_IDEA)
+        st.rerun()
+
+    st.session_state["idea"] = {
+        "title": title, "description": description, "keywords": keywords,
+        "exclude_keywords": exclude, "scope": scope,
+        "idea_dna": idea.get("idea_dna", {}),
+    }
+
+    if start:
+        if not (title or description or keywords):
+            st.error("아이디어명/설명/키워드 중 하나는 입력해야 합니다.")
+        else:
+            run_full_review(st.session_state["idea"], top_n, scope)
+
+    df = get_results_df()
+    if not df.empty:
+        st.markdown("---")
+        render_review_tabs()
 
 
-# ============================================================ 경쟁사 분석
-def page_competitors():
-    ui.page_header("경쟁사 분석",
-                   "주요 출원인(경쟁사)별 출원 현황과 신규 동향입니다. (MVP: 표본 데이터)")
-    st.caption(f"마지막 업데이트 · {monitoring.last_updated()}")
-    comp = monitoring.competitor_table(10)
-    st.plotly_chart(px.bar(comp.head(8), x="경쟁사", y="총 출원",
-                           title="경쟁사별 출원 건수"), use_container_width=True)
-    st.dataframe(comp, hide_index=True, use_container_width=True)
-    st.info("경쟁사명을 등록하면 신규 출원을 지속 모니터링하는 구조입니다.")
+# ============================================================ 검토 결과함
+def _load_case_into_session(idea_id: int):
+    """검토 케이스(idea_id)의 저장된 검색 결과를 세션으로 복원."""
+    rows = db.load_idea_results(idea_id)
+    if not rows:
+        return False
+    ideas = {i["id"]: i for i in db.list_ideas(200)}
+    meta = ideas.get(idea_id, {})
+    try:
+        idea_dna = json.loads(meta.get("idea_dna_json") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        idea_dna = {}
+    results = _reconstruct_results(rows)
+    st.session_state["idea"] = {
+        "title": meta.get("title", ""),
+        "description": meta.get("description", ""),
+        "keywords": meta.get("keywords", ""),
+        "exclude_keywords": meta.get("exclude_keywords", ""),
+        "idea_dna": idea_dna}
+    st.session_state["results"] = results
+    st.session_state["results_df"] = stats.to_dataframe(results)
+    st.session_state["top_n"] = min(10, len(results))
+    st.session_state["selected_patent"] = results[0]["application_no"]
+    for k in ("review", "timeline_lines", "claim_chart", "em_rows"):
+        st.session_state.pop(k, None)
+    return True
 
 
-# ============================================================ 알림
-def page_alerts():
-    ui.page_header("알림",
-                   "관심 조건에 생긴 변화 알림입니다. (MVP: 표본 데이터)")
-    ac = monitoring.alert_counts()
-    m = st.columns(3)
-    m[0].metric("고위험", f"{ac['높음']}건")
-    m[1].metric("주의", f"{ac['중간']}건")
-    m[2].metric("참고", f"{ac['낮음']}건")
-    st.markdown("##### 알림 목록")
-    for a in monitoring.alerts():
-        st.markdown(ui.alert_row(a), unsafe_allow_html=True)
+def page_review_cases():
+    ui.page_header("검토 결과함",
+                   "지난 아이디어 검토 케이스를 모아 보고, 다시 불러옵니다.")
+    try:
+        cases = db.list_review_cases()
+    except Exception as exc:
+        st.error(f"검토 케이스를 불러오지 못했습니다: {exc}")
+        cases = []
+    if not cases:
+        st.info("저장된 검토 케이스가 없습니다. **새 아이디어 검토**에서 [검토 시작]을 "
+                "누르면 케이스가 자동으로 기록됩니다.")
+        if st.button("새 아이디어 검토로 가기", type="primary",
+                     icon=":material/lightbulb:"):
+            goto("New Review")
+        return
+
+    flt = st.multiselect("상태 필터", db.REVIEW_STATUSES,
+                         default=db.REVIEW_STATUSES)
+    view = [c for c in cases if (c.get("status") or "검토중") in flt]
+    if not view:
+        st.warning("선택한 상태의 케이스가 없습니다.")
+        return
+
+    table = pd.DataFrame([{
+        "상태": c.get("status") or "검토중",
+        "아이디어명": c.get("title") or "-",
+        "유사특허": c.get("n_results") or 0,
+        "주의(70+)": c.get("high_risk") or 0,
+        "신뢰도": c.get("confidence") or "-",
+        "최종 판단": c.get("final_verdict") or "-",
+        "검토일": str(c.get("created_at"))[:16].replace("T", " "),
+    } for c in view])
+    st.dataframe(table, hide_index=True, use_container_width=True)
+
+    labels = {f"[{str(c.get('created_at'))[:10]}] {c.get('title')} "
+              f"({c.get('status')})": c for c in view}
+    pick = st.selectbox("케이스 선택", list(labels.keys()))
+    case = labels[pick]
+    b1, b2, b3 = st.columns(3)
+    if b1.button("이 케이스 불러오기", type="primary",
+                 icon=":material/folder_open:"):
+        if case.get("idea_id") and _load_case_into_session(case["idea_id"]):
+            st.session_state["review_case_id"] = case["id"]
+            st.session_state["case_status"] = case.get("status", "검토중")
+            st.session_state["case_verdict"] = case.get("final_verdict", "")
+            goto("New Review")
+        else:
+            st.warning("이 케이스에는 복원할 검색 결과가 없습니다.")
+    new_status = b2.selectbox("상태 변경", db.REVIEW_STATUSES,
+                              index=db.REVIEW_STATUSES.index(case.get("status"))
+                              if case.get("status") in db.REVIEW_STATUSES else 1,
+                              key="rc_status")
+    if b2.button("상태 저장", key="rc_save"):
+        db.update_review_case(case["id"], status=new_status)
+        st.rerun()
+    if b3.button("케이스 삭제", icon=":material/delete:", key="rc_del"):
+        db.delete_review_case(case["id"])
+        st.rerun()
 
 
-# ============================================================ 포트폴리오
-def page_portfolio():
-    ui.page_header("포트폴리오",
-                   "관심 특허를 기술군별로 묶어 보는 포트폴리오 뷰입니다.")
+# ============================================================ 관심 특허
+def page_watchlist():
+    ui.page_header("관심 특허",
+                   "검토 상태를 지정한 특허를 모아 기술군별 포트폴리오로 봅니다.")
     try:
         marks = db.list_bookmarks()
     except Exception:
         marks = []
     if not marks:
-        st.info("관심 특허가 없습니다. 분석 화면에서 특허의 '검토 상태'를 지정하면 "
-                "여기에 기술군별로 모입니다.")
+        st.info("관심 특허가 없습니다. 검토 결과의 특허 상세에서 '검토 상태'를 "
+                "지정하면 여기에 모입니다.")
         return
-    pf = pd.DataFrame([{
-        "기술군": m.get("technology_group") or "기타",
-        "검토상태": m.get("review_status") or "관심",
-        "특허명": m.get("title") or "-", "출원인": m.get("applicant") or "-",
-        "상태": m.get("status") or "-"} for m in marks])
-    g = pf.groupby("기술군").size().reset_index(name="건수")
-    c1, c2 = st.columns([2, 3])
-    c1.plotly_chart(px.pie(g, names="기술군", values="건수", hole=0.5,
-                           title="기술군별 관심 특허"), use_container_width=True)
-    c2.dataframe(pf, hide_index=True, use_container_width=True)
+
+    tab1, tab2 = st.tabs(["목록", "포트폴리오"])
+    with tab1:
+        flt = st.multiselect("상태 필터", db.REVIEW_STATUSES,
+                             default=db.REVIEW_STATUSES)
+        view = [m for m in marks
+                if (m.get("review_status") or "검토중") in flt]
+        bm = pd.DataFrame([{
+            "검토상태": m.get("review_status") or "검토중",
+            "특허명": m.get("title") or "-",
+            "출원인": m.get("applicant") or "-",
+            "출원번호": m.get("application_no"),
+            "특허상태": m.get("status") or "-",
+            "기술군": m.get("technology_group") or "-",
+            "KIPRIS": m.get("kipris_url") or "",
+        } for m in view])
+        st.dataframe(
+            bm, hide_index=True, use_container_width=True,
+            column_config={"KIPRIS": st.column_config.LinkColumn(
+                "KIPRIS", display_text="원문")})
+        c1, c2 = st.columns([2, 1])
+        rm = c1.selectbox("목록에서 제거할 특허",
+                          [m["application_no"] for m in marks])
+        if c2.button("목록에서 제거"):
+            db.set_review_status(rm, "없음")
+            st.rerun()
+        if len(bm):
+            st.download_button(
+                "관심 특허 CSV 다운로드",
+                data=bm.to_csv(index=False).encode("utf-8-sig"),
+                file_name="ip3_watchlist.csv", mime="text/csv")
+    with tab2:
+        pf = pd.DataFrame([{
+            "기술군": m.get("technology_group") or "기타",
+            "검토상태": m.get("review_status") or "검토중",
+            "특허명": m.get("title") or "-",
+            "출원인": m.get("applicant") or "-",
+            "상태": m.get("status") or "-"} for m in marks])
+        g = pf.groupby("기술군").size().reset_index(name="건수")
+        cc1, cc2 = st.columns([2, 3])
+        cc1.plotly_chart(px.pie(g, names="기술군", values="건수", hole=0.5,
+                                title="기술군별 관심 특허"),
+                         use_container_width=True)
+        cc2.dataframe(pf, hide_index=True, use_container_width=True)
+
+
+# ============================================================ 모니터링
+def page_monitoring():
+    ui.page_header("모니터링",
+                   "관심 조건을 등록하고, 신규 출원·경쟁사·알림을 한 곳에서 봅니다.")
+    tab1, tab2, tab3 = st.tabs(["현황", "경쟁사", "관심 조건 · 알림"])
+
+    with tab1:
+        st.caption(f"마지막 업데이트 · {monitoring.last_updated()}")
+        c1, c2 = st.columns(2)
+        c1.plotly_chart(px.bar(monitoring.ipc_distribution(), x="IPC", y="건수",
+                               title="IPC/CPC별 분포"),
+                        use_container_width=True)
+        c2.plotly_chart(px.line(monitoring.yearly_trend(), x="연도", y="건수",
+                                markers=True, title="연도별 신규 출원 추이"),
+                        use_container_width=True)
+        st.markdown("##### 최근 신규 특허")
+        rec = pd.DataFrame(monitoring.recent_patents(10))
+        st.dataframe(pd.DataFrame({
+            "특허명": rec["title"], "출원인": rec["applicant"],
+            "상태": rec["status"], "출원일": rec["application_date"],
+            "기술군": rec["technology_group"]}),
+            hide_index=True, use_container_width=True)
+
+    with tab2:
+        comp = monitoring.competitor_table(10)
+        st.plotly_chart(px.bar(comp.head(8), x="경쟁사", y="총 출원",
+                               title="경쟁사별 출원 건수"),
+                        use_container_width=True)
+        st.dataframe(comp, hide_index=True, use_container_width=True)
+
+    with tab3:
+        st.markdown("##### 관심 조건 등록")
+        st.caption("키워드·IPC·출원인을 등록하면 해당 조건의 신규 특허를 모아 "
+                   "보여주는 구조입니다. (실데이터 연동 시 자동 갱신)")
+        with st.form("mon_target_form"):
+            mc1, mc2 = st.columns(2)
+            name = mc1.text_input("조건명", placeholder="예: PC 기둥 접합부")
+            scope = mc2.selectbox("범위", ["국내", "해외", "국내+해외"])
+            kw = st.text_input("키워드 (쉼표 구분)",
+                               placeholder="프리캐스트, 접합, 전단키")
+            mc3, mc4 = st.columns(2)
+            ipc = mc3.text_input("IPC (선택)", placeholder="E04B, E04C")
+            applicant = mc4.text_input("출원인 (선택)")
+            if st.form_submit_button("관심 조건 등록", type="primary"):
+                if not (name or kw):
+                    st.error("조건명 또는 키워드는 입력해야 합니다.")
+                else:
+                    db.save_monitoring_target({
+                        "name": name, "keywords": kw, "ipc": ipc,
+                        "applicant": applicant, "scope": scope})
+                    st.success("관심 조건을 등록했습니다.")
+                    st.rerun()
+
+        targets = db.list_monitoring_targets()
+        if targets:
+            st.dataframe(pd.DataFrame([{
+                "조건명": t.get("name") or "-",
+                "키워드": t.get("keywords") or "-",
+                "IPC": t.get("ipc") or "-",
+                "출원인": t.get("applicant") or "-",
+                "범위": t.get("scope") or "-",
+                "등록일": str(t.get("created_at"))[:10],
+            } for t in targets]), hide_index=True, use_container_width=True)
+            dc1, dc2 = st.columns([2, 1])
+            opt = {f"{t.get('name') or t.get('keywords')}": t["id"]
+                   for t in targets}
+            rm = dc1.selectbox("삭제할 조건", list(opt.keys()))
+            if dc2.button("조건 삭제"):
+                db.delete_monitoring_target(opt[rm])
+                st.rerun()
+
+        st.markdown("##### 알림")
+        ac = monitoring.alert_counts()
+        m = st.columns(3)
+        m[0].metric("고위험", f"{ac['높음']}건")
+        m[1].metric("주의", f"{ac['중간']}건")
+        m[2].metric("참고", f"{ac['낮음']}건")
+        for a in monitoring.alerts()[:8]:
+            st.markdown(ui.alert_row(a), unsafe_allow_html=True)
+
+
+# ============================================================ 리포트 · 설정
+def page_reports_settings():
+    ui.page_header("리포트 · 설정",
+                   "분석 결과를 내보내고, API Key·데이터 모드·기준을 관리합니다.")
+    tab1, tab2 = st.tabs(["리포트", "설정"])
+    with tab1:
+        st.session_state["_no_header"] = True
+        try:
+            page_export_center()
+        finally:
+            st.session_state["_no_header"] = False
+    with tab2:
+        st.session_state["_no_header"] = True
+        try:
+            page_settings()
+        finally:
+            st.session_state["_no_header"] = False
 
 
 # ============================================================ 브랜드 / UI 가이드
 def page_brand_guide():
-    if st.button("← 설정으로", key="bg_back"):
-        goto("Settings")
+    if st.button("← 리포트 · 설정으로", key="bg_back"):
+        goto("Reports")
     ui.page_header("브랜드 · UI 가이드",
                    "IP³ 디자인 시스템 — 로고·컬러·컴포넌트 가이드.")
     logo = ui._logo_uri(64, "color")
@@ -1362,7 +1552,7 @@ def page_brand_guide():
 def main():
     ss = st.session_state
     if "page" not in ss:
-        ss["page"] = "Dashboard"
+        ss["page"] = "Home"
     if ss.get("_goto"):                      # 바로가기 버튼이 설정한 이동
         ss["page"] = ss.pop("_goto")
 
@@ -1389,16 +1579,12 @@ def main():
 
     ui.app_header()
     pages = {
-        "Dashboard": page_dashboard,
-        "Tech Monitor": page_tech_monitor,
-        "Competitors": page_competitors,
-        "Alerts": page_alerts,
-        "Patent Search": page_idea_canvas,
-        "Idea Review": page_idea_review,
-        "Watchlist": page_history,
-        "Portfolio": page_portfolio,
-        "Reports": page_export_center,
-        "Settings": page_settings,
+        "Home": page_dashboard,
+        "New Review": page_new_review,
+        "Review Cases": page_review_cases,
+        "Watchlist": page_watchlist,
+        "Monitoring": page_monitoring,
+        "Reports": page_reports_settings,
         "Brand Guide": page_brand_guide,
     }
     pages.get(ss["page"], page_dashboard)()

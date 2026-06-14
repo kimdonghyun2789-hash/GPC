@@ -72,6 +72,37 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS review_cases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    idea_id INTEGER,
+    title TEXT,
+    description TEXT,
+    keywords TEXT,
+    scope TEXT,
+    top_n INTEGER,
+    status TEXT,
+    final_verdict TEXT,
+    confidence TEXT,
+    n_results INTEGER,
+    high_risk INTEGER,
+    snapshot_json TEXT,
+    created_at TEXT,
+    updated_at TEXT,
+    FOREIGN KEY (idea_id) REFERENCES ideas(id)
+);
+
+CREATE TABLE IF NOT EXISTS monitoring_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    keywords TEXT,
+    ipc TEXT,
+    applicant TEXT,
+    scope TEXT,
+    enabled INTEGER DEFAULT 1,
+    last_run_at TEXT,
+    created_at TEXT
+);
 """
 
 
@@ -94,7 +125,8 @@ def reset_db() -> None:
     """데이터베이스 초기화 (settings 는 유지)."""
     conn = get_connection()
     try:
-        for table in ("search_results", "drawings", "patents", "ideas"):
+        for table in ("search_results", "drawings", "patents", "ideas",
+                      "review_cases"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()
     finally:
@@ -216,15 +248,28 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 """
 
 
+# 검토 상태 7종 (한글 UI / 내부 enum). 관심특허·검토케이스 공통 사용.
+REVIEW_STATUSES = ["초안", "검토중", "보완필요", "출원후보",
+                   "변리사검토", "보류", "제외"]
+STATUS_ENUM = {
+    "초안": "DRAFT", "검토중": "REVIEWING", "보완필요": "NEED_REVISION",
+    "출원후보": "PATENT_CANDIDATE", "변리사검토": "ATTORNEY_REVIEW",
+    "보류": "HOLD", "제외": "EXCLUDED",
+}
+# 구버전 상태값 → 신버전 매핑 (기존 DB 호환)
+_LEGACY_STATUS = {"관심": "검토중", "확인필요": "보완필요", "주의": "변리사검토"}
+
+
 def _ensure_bookmarks(conn):
     conn.executescript(BOOKMARK_SCHEMA)
     # status 컬럼 마이그레이션 (기존 DB 호환)
     cols = [r[1] for r in conn.execute("PRAGMA table_info(bookmarks)").fetchall()]
     if "status" not in cols:
-        conn.execute("ALTER TABLE bookmarks ADD COLUMN status TEXT DEFAULT '관심'")
-
-
-REVIEW_STATUSES = ["관심", "확인필요", "주의", "제외"]
+        conn.execute("ALTER TABLE bookmarks ADD COLUMN status TEXT DEFAULT '검토중'")
+    # 구버전 상태값을 신버전으로 일괄 변환
+    for old, new in _LEGACY_STATUS.items():
+        conn.execute("UPDATE bookmarks SET status = ? WHERE status = ?",
+                     (new, old))
 
 
 def set_review_status(application_no: str, status: str, title: str = "",
@@ -371,5 +416,158 @@ def save_drawing(patent_id: int, image_path: str, caption: str) -> int:
         )
         conn.commit()
         return cur.lastrowid
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------- 검토 케이스
+def save_review_case(case: dict) -> int:
+    """검토 케이스를 저장(신규 생성). snapshot 은 결과 전체 JSON."""
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        now = datetime.now().isoformat()
+        cur = conn.execute(
+            "INSERT INTO review_cases(idea_id, title, description, keywords,"
+            " scope, top_n, status, final_verdict, confidence, n_results,"
+            " high_risk, snapshot_json, created_at, updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (case.get("idea_id"), case.get("title", ""),
+             case.get("description", ""), case.get("keywords", ""),
+             case.get("scope", "국내"), int(case.get("top_n", 10) or 10),
+             case.get("status", "초안"), case.get("final_verdict", ""),
+             case.get("confidence", ""), int(case.get("n_results", 0) or 0),
+             int(case.get("high_risk", 0) or 0),
+             json.dumps(case.get("snapshot", {}), ensure_ascii=False,
+                        default=str),
+             now, now))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_review_case(case_id: int, **fields) -> None:
+    """검토 케이스 일부 필드 갱신 (status, final_verdict 등)."""
+    if not fields:
+        return
+    allowed = {"title", "status", "final_verdict", "confidence",
+               "n_results", "high_risk", "snapshot"}
+    sets, vals = [], []
+    for k, v in fields.items():
+        if k not in allowed:
+            continue
+        if k == "snapshot":
+            sets.append("snapshot_json = ?")
+            vals.append(json.dumps(v, ensure_ascii=False, default=str))
+        else:
+            sets.append(f"{k} = ?")
+            vals.append(v)
+    if not sets:
+        return
+    sets.append("updated_at = ?")
+    vals.append(datetime.now().isoformat())
+    vals.append(case_id)
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        conn.execute(
+            f"UPDATE review_cases SET {', '.join(sets)} WHERE id = ?", vals)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_review_cases(limit: int = 100) -> list:
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        rows = conn.execute(
+            "SELECT id, idea_id, title, description, keywords, scope, top_n,"
+            " status, final_verdict, confidence, n_results, high_risk,"
+            " created_at, updated_at FROM review_cases"
+            " ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_review_case(case_id: int) -> Optional[dict]:
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        row = conn.execute(
+            "SELECT * FROM review_cases WHERE id = ?", (case_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["snapshot"] = json.loads(d.get("snapshot_json") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d["snapshot"] = {}
+        return d
+    finally:
+        conn.close()
+
+
+def delete_review_case(case_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        conn.execute("DELETE FROM review_cases WHERE id = ?", (case_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------------- 모니터링 관심조건
+def save_monitoring_target(t: dict) -> int:
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        cur = conn.execute(
+            "INSERT INTO monitoring_targets(name, keywords, ipc, applicant,"
+            " scope, enabled, created_at) VALUES(?,?,?,?,?,?,?)",
+            (t.get("name", ""), t.get("keywords", ""), t.get("ipc", ""),
+             t.get("applicant", ""), t.get("scope", "국내"),
+             1 if t.get("enabled", True) else 0,
+             datetime.now().isoformat()))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def list_monitoring_targets() -> list:
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        rows = conn.execute(
+            "SELECT * FROM monitoring_targets ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_monitoring_target(target_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        conn.execute("DELETE FROM monitoring_targets WHERE id = ?",
+                     (target_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def touch_monitoring_target(target_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        conn.execute(
+            "UPDATE monitoring_targets SET last_run_at = ? WHERE id = ?",
+            (datetime.now().isoformat(), target_id))
+        conn.commit()
     finally:
         conn.close()
