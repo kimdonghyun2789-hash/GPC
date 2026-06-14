@@ -16,8 +16,8 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.platypus import (Image, Paragraph, SimpleDocTemplate, Spacer,
-                                Table, TableStyle)
+from reportlab.platypus import (Image, PageBreak, Paragraph,
+                                SimpleDocTemplate, Spacer, Table, TableStyle)
 
 from analyzers import statistics as stats
 from utils import config
@@ -103,13 +103,16 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
                file_path: Optional[str] = None,
                images: Optional[dict] = None,
                claim_rows: Optional[list] = None,
-               worklist: Optional[list] = None) -> bytes:
+               worklist: Optional[list] = None,
+               summary: Optional[dict] = None) -> bytes:
     """분석 리포트 PDF 생성. bytes 반환 (file_path 지정 시 저장도).
 
     images: {"network": png bytes, "yearly": png bytes,
              "drawings": [(caption, png bytes), ...]} (선택)
     claim_rows: 청구항 대비표 행 리스트 (선택)
     worklist: 검토 목록 [{review_status,title,applicant,status}, ...] (선택)
+    summary: 1페이지 요약 {final_verdict, confidence, differentiators[],
+             novelty_risk, design_around[]} (선택)
     """
     images = images or {}
     font = _register_font()
@@ -149,6 +152,45 @@ def export_pdf(results_df: pd.DataFrame, idea: dict,
     story.append(Paragraph(
         f"생성일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}", st["small"]))
     story.append(Spacer(1, 8))
+
+    # 0. 1페이지 요약 (검토 결론을 맨 앞에)
+    if summary is not None:
+        story.append(Paragraph("검토 1페이지 요약", st["h2"]))
+        story.append(Paragraph(
+            f"아이디어명: {idea.get('title','-')}", st["body"]))
+        story.append(Paragraph(
+            f"검토일: {datetime.now().strftime('%Y-%m-%d')} · "
+            f"검토 신뢰도: {summary.get('confidence','-')}", st["body"]))
+        story.append(Paragraph(
+            f"최종 판단: {summary.get('final_verdict') or '미작성'}", st["body"]))
+        diffs = summary.get("differentiators") or []
+        story.append(Paragraph("핵심 차별 포인트", st["body"]))
+        for d in (diffs[:3] or ["-"]):
+            story.append(Paragraph(f"• {_clip(d, 100)}", st["body"]))
+        if results_df is not None and not results_df.empty:
+            story.append(Paragraph("리스크 특허 TOP 5", st["body"]))
+            risk_col = ("claim_risk" if "claim_risk" in results_df
+                        else "total_score")
+            data = [["리스크", "특허명", "출원인", "상태"]]
+            for _, p in results_df.head(5).iterrows():
+                data.append([f"{p.get(risk_col, 0):.0f}",
+                             _clip(p.get("title"), 40),
+                             _clip(p.get("applicant"), 14),
+                             str(p.get("status", ""))])
+            story.append(_table(data, font,
+                                col_widths=[16 * mm, 86 * mm, 36 * mm, 16 * mm]))
+        if summary.get("novelty_risk"):
+            story.append(Paragraph(
+                f"신규성·진보성 리스크: {summary['novelty_risk']}", st["body"]))
+        if summary.get("design_around"):
+            story.append(Paragraph("보완 방향", st["body"]))
+            for d in summary["design_around"][:3]:
+                story.append(Paragraph(f"• {_clip(d, 100)}", st["body"]))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(
+            "※ 본 요약은 1차 참고용이며 최종 법률 판단이 아닙니다. 출원 전 "
+            "변리사 검토를 권장합니다.", st["small"]))
+        story.append(PageBreak())
 
     # 1. 아이디어 개요
     story.append(Paragraph("1. 아이디어 개요", st["h2"]))

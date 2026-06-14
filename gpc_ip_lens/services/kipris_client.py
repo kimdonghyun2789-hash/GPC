@@ -22,6 +22,27 @@ import requests
 from utils import cache_utils, config
 from utils.text_utils import tokenize, split_keywords
 
+import re as _re
+
+
+def _norm_no(value) -> str:
+    """식별번호 정규화: 숫자만 추출(하이픈/공백/접두 차이 흡수)."""
+    return _re.sub(r"\D", "", str(value or ""))
+
+
+def _dedup_keys(item: dict) -> set:
+    """한 특허의 중복 판정 키 집합(출원/공개/등록번호 정규화 + 제목 보조)."""
+    keys = set()
+    for f in ("application_no", "publication_no", "registration_no"):
+        n = _norm_no(item.get(f))
+        if len(n) >= 6:                      # 너무 짧은 값은 키로 쓰지 않음
+            keys.add(f"no:{n}")
+    if not keys:
+        title = str(item.get("title", "")).strip()
+        if title:
+            keys.add(f"title:{title}")
+    return keys
+
 
 def _xml_first(item, names):
     """item 하위에서 후보 태그명 중 처음 발견되는 텍스트를 반환.
@@ -245,7 +266,11 @@ class KiprisClient:
 
     def search_multi(self, queries: List[str], per_query: int = 25,
                      exclude_keywords: str = "") -> List[dict]:
-        """검색식 상위 3~5개를 실행하고 출원번호 기준으로 중복 제거."""
+        """검색식 상위 3~5개를 실행하고 출원/공개/등록번호 기준으로 중복 제거.
+
+        동일 특허가 검색식마다 다른 번호(출원/공개/등록)로 잡히는 경우까지
+        합치기 위해 모든 식별번호를 정규화해 비교한다.
+        """
         seen = set()
         merged: List[dict] = []
         excludes = [e.lower() for e in split_keywords(exclude_keywords)]
@@ -255,16 +280,13 @@ class KiprisClient:
             except RuntimeError:
                 continue
             for item in items:
-                key = (item.get("application_no")
-                       or item.get("publication_no")
-                       or item.get("registration_no")
-                       or item.get("title"))
-                if not key or key in seen:
+                keys = _dedup_keys(item)
+                if not keys or (seen & keys):
                     continue
                 text = f"{item.get('title','')} {item.get('abstract','')}".lower()
                 if any(ex and ex in text for ex in excludes):
                     continue
-                seen.add(key)
+                seen |= keys
                 item["search_query"] = query
                 merged.append(item)
         return merged

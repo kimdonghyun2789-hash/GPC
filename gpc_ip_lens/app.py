@@ -930,10 +930,26 @@ def page_export_center():
                 worklist = db.list_bookmarks()
             except Exception:
                 worklist = None
+            # 1페이지 요약 (검토 신뢰도/최종판단/차별/보완 방향)
+            conf_label, _, _ = review_confidence()
+            diff_res = ss_get("diff_result") or {}
+            rev = review or {}
+            differentiators = (diff_res.get("differentiators")
+                               or rev.get("key_differentiators") or [])
+            design_around = (rev.get("design_around_points")
+                             or (ss_get("draft_result") or {}).get("design_around")
+                             or [])
+            summary = {
+                "confidence": conf_label,
+                "final_verdict": ss_get("case_verdict", ""),
+                "differentiators": differentiators,
+                "novelty_risk": rev.get("review_comment", ""),
+                "design_around": design_around,
+            }
             pdf = pdf_exporter.export_pdf(df, idea, queries, timeline_lines,
                                           review, top_n, images=report_imgs,
                                           claim_rows=claim_rows,
-                                          worklist=worklist)
+                                          worklist=worklist, summary=summary)
             st.download_button("PDF 다운로드", data=pdf,
                                file_name="gpc_ip_lens_report.pdf",
                                mime="application/pdf",
@@ -1177,6 +1193,56 @@ def render_element_match():
             st.caption("Gemini 미사용 — 규칙 기반 구성요소 매칭 결과입니다.")
 
 
+def render_differentiation_tab():
+    from analyzers import claim_draft as draft_mod
+    page_ai_review()
+    st.markdown("---")
+    st.markdown("##### 차별성 · 보완 아이디어 · 청구항 초안")
+    st.caption(draft_mod.DISCLAIMER)
+    df = get_results_df()
+    if df.empty:
+        return
+    idea = ss_get("idea", {})
+    idea_dna = idea.get("idea_dna", {})
+    if st.button("차별성 · 청구항 초안 생성", key="gen_draft"):
+        top = df.head(5).to_dict("records")
+        with st.spinner("차별 포인트 도출 및 청구항 초안 작성 중..."):
+            diff = draft_mod.build_differentiation(idea, idea_dna, top)
+            draft, method = draft_mod.draft(idea, idea_dna, diff, top)
+        st.session_state["diff_result"] = diff
+        st.session_state["draft_result"] = draft
+        st.session_state["draft_method"] = method
+    diff = ss_get("diff_result")
+    draft = ss_get("draft_result")
+    if not (diff and draft):
+        return
+    c1, c2 = st.columns(2)
+    c1.markdown("**핵심 차별 포인트**")
+    for d in (diff.get("differentiators") or ["-"]):
+        c1.markdown(f"- {d}")
+    if diff.get("stage_differentiators"):
+        c1.markdown("**차별 공정단계**: " +
+                    ", ".join(diff["stage_differentiators"]))
+    c2.markdown("**유사특허와 공통 구성 (회피 대상)**")
+    for d in (diff.get("common_points") or ["-"]):
+        c2.markdown(f"- {d}")
+
+    st.markdown("**독립항 초안**")
+    st.code(draft.get("independent_claim", "-"), language=None)
+    st.markdown("**종속항 초안**")
+    for i, dc in enumerate(draft.get("dependent_claims", []), start=2):
+        st.markdown(f"{i}. {dc}")
+    st.markdown("**방법항 초안**")
+    st.code(draft.get("method_claim", "-"), language=None)
+    st.markdown("**회피설계 대체안**")
+    for da in (draft.get("design_around") or ["-"]):
+        st.markdown(f"- {da}")
+    if draft.get("notes"):
+        st.info(draft["notes"])
+    if ss_get("draft_method") == "fallback":
+        st.caption("Gemini 미사용 — 규칙 기반 초안입니다.")
+
+
 def render_report_tab():
     df = get_results_df()
     if df.empty:
@@ -1217,7 +1283,7 @@ def render_review_tabs():
             page_patent_dna()
             render_element_match()
         with tabs[3]:
-            page_ai_review()
+            render_differentiation_tab()
         with tabs[4]:
             page_landscape(flat=True)
         with tabs[5]:
@@ -1496,13 +1562,33 @@ def page_monitoring():
                 "범위": t.get("scope") or "-",
                 "등록일": str(t.get("created_at"))[:10],
             } for t in targets]), hide_index=True, use_container_width=True)
-            dc1, dc2 = st.columns([2, 1])
+            dc1, dc2, dc3 = st.columns([2, 1, 1])
             opt = {f"{t.get('name') or t.get('keywords')}": t["id"]
                    for t in targets}
             rm = dc1.selectbox("삭제할 조건", list(opt.keys()))
             if dc2.button("조건 삭제"):
                 db.delete_monitoring_target(opt[rm])
                 st.rerun()
+            if dc3.button("지금 점검", icon=":material/sync:", type="primary"):
+                from jobs import monitor_runner
+                with st.spinner("관심 조건 신규 특허 점검 중..."):
+                    st.session_state["monitor_runs"] = monitor_runner.run_all()
+
+            for r in (ss_get("monitor_runs") or []):
+                if r["first_run"]:
+                    st.info(f"**{r['target']}** · 최초 등록 (기준 {r['total']}건 "
+                            "저장, 다음 점검부터 신규 감지)")
+                elif r["new_count"]:
+                    st.warning(f"**{r['target']}** · 신규 {r['new_count']}건 "
+                               f"감지 (총 {r['total']}건)")
+                    nm = pd.DataFrame([{
+                        "특허명": p.get("title", "-"),
+                        "출원인": p.get("applicant", "-"),
+                        "출원일": p.get("application_date", "-"),
+                    } for p in r["new_patents"][:10]])
+                    st.dataframe(nm, hide_index=True, use_container_width=True)
+                else:
+                    st.success(f"**{r['target']}** · 신규 없음 (총 {r['total']}건)")
 
         st.markdown("##### 알림")
         ac = monitoring.alert_counts()
