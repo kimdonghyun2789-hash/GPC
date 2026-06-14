@@ -1,0 +1,5 @@
+# 윈도우 배치파일은 CRLF 로 체크아웃 (cmd 호환)
+*.bat text eol=crlf
+# 셸 스크립트는 LF 유지 (macOS/Linux 호환)
+*.command text eol=lf
+*.sh text eol=lf
