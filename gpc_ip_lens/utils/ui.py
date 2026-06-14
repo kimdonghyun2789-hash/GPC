@@ -325,6 +325,19 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
 .flow .step span {{ font-size:.8rem; color:var(--muted); line-height:1.45; }}
 .flow .arr {{ display:flex; align-items:center; color:var(--faint);
   font-size:1.2rem; }}
+
+/* ---------- 알림 행 ---------- */
+.alert-row {{ display:flex; align-items:center; gap:10px; padding:.6rem .8rem;
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  margin-bottom:7px; }}
+.alert-row .dot {{ width:8px; height:8px; border-radius:50%; flex:none; }}
+.alert-row .ar-body {{ flex:1; min-width:0; }}
+.alert-row .ar-top {{ display:flex; align-items:center; gap:8px; }}
+.alert-row .ar-title {{ font-size:.86rem; font-weight:600; color:var(--ink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.alert-row .ar-msg {{ font-size:.78rem; color:var(--muted); margin-top:2px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.alert-row .ar-date {{ font-size:.74rem; color:var(--faint); flex:none; }}
 </style>
         """,
         unsafe_allow_html=True,
@@ -359,6 +372,9 @@ def app_header() -> None:
 
 
 def page_header(title: str, subtitle: str = "") -> None:
+    # 탭 등에 임베드될 때(_no_header) 큰 제목을 생략해 중복을 막는다
+    if st.session_state.get("_no_header"):
+        return
     sub = f'<div class="s">{html.escape(subtitle)}</div>' if subtitle else ""
     st.markdown(
         f'<div class="gpc-page-head"><div class="t">{html.escape(title)}</div>'
@@ -397,3 +413,36 @@ def group_badge(group: str) -> str:
 def info_card(title: str, value_html: str) -> str:
     return (f'<div class="gpc-card"><div class="ct">{html.escape(title)}</div>'
             f'<div class="cv">{value_html}</div></div>')
+
+
+# 알림 중요도 색
+ALERT_LEVEL = {
+    "높음": ("#FCE7E5", "#C0392B"),
+    "중간": ("#FFF0DA", "#B5701A"),
+    "낮음": ("#E3EDFF", "#0057FF"),
+}
+
+
+def alert_row(a: dict) -> str:
+    """알림 한 줄 HTML (중요도 색 점 + 제목 + 메시지 + 날짜)."""
+    bg, fg = ALERT_LEVEL.get(a.get("level", "낮음"), ("#EDEFF4", "#475569"))
+    title = html.escape(str(a.get("title", ""))[:40])
+    msg = html.escape(str(a.get("message", "")))
+    date = html.escape(str(a.get("date", "")))
+    typ = html.escape(str(a.get("type", "")))
+    return (
+        f'<div class="alert-row">'
+        f'<span class="dot" style="background:{fg}"></span>'
+        f'<div class="ar-body"><div class="ar-top">'
+        f'<span class="gpc-badge" style="background:{bg};color:{fg}">{typ}</span>'
+        f'<span class="ar-title">{title}</span></div>'
+        f'<div class="ar-msg">{msg}</div></div>'
+        f'<span class="ar-date">{date}</span></div>')
+
+
+def badge_html(label, kind="default"):
+    palette = {"default": ("#EDEFF4", "#475569"), "primary": ("#E3EDFF", "#0057FF"),
+               "success": ("#E1F2E8", "#2C8A4E"), "warn": ("#FFF0DA", "#B5701A"),
+               "danger": ("#FCE7E5", "#C0392B")}
+    bg, fg = palette.get(kind, palette["default"])
+    return _badge(label, bg, fg)

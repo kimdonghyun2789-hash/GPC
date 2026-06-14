@@ -27,7 +27,7 @@ from analyzers.classifier import TECH_GROUPS
 from exporters import excel_exporter, image_exporter, pdf_exporter
 from services import gemini_service
 from services.kipris_client import KiprisClient
-from utils import cache_utils, config, db, ui
+from utils import cache_utils, config, db, monitoring, ui
 from utils.text_utils import split_keywords
 
 _ICON_PATH = config.BASE_DIR / "assets" / "brand" / "ip3-logo.png"
@@ -60,20 +60,20 @@ MENU_KO = {
     "Settings": "설정",
 }
 
-# 단계별 내비게이션 그룹 (key, 한글 라벨, 아이콘) — 사용 흐름이 보이도록 구성
+# 메뉴 그룹 (key, 한글 라벨, 아이콘) — IP 모니터링 SaaS 구조
 NAV_GROUPS = [
-    ("", [("Dashboard", "대시보드", ":material/dashboard:")]),
-    ("STEP 1 · 입력", [
-        ("Idea Canvas", "아이디어 입력", ":material/lightbulb:")]),
-    ("STEP 2 · 분석 결과", [
-        ("Patent Radar", "유사특허 분석", ":material/radar:"),
-        ("Patent DNA", "특허 DNA 비교", ":material/compare_arrows:"),
-        ("Landscape", "통계 · 기술분석", ":material/insights:"),
-        ("Drawing Intelligence", "도면 분석", ":material/image:"),
-        ("AI Patent Review", "AI 검토", ":material/smart_toy:")]),
-    ("STEP 3 · 활용", [
-        ("History", "기록 · 관심특허", ":material/bookmark:"),
-        ("Export Center", "보고서 · 내보내기", ":material/description:")]),
+    ("모니터링", [
+        ("Dashboard", "대시보드", ":material/dashboard:"),
+        ("Tech Monitor", "기술 모니터링", ":material/radar:"),
+        ("Competitors", "경쟁사 분석", ":material/groups:"),
+        ("Alerts", "알림", ":material/notifications:")]),
+    ("분석", [
+        ("Patent Search", "특허 검색", ":material/search:"),
+        ("Idea Review", "아이디어 검토", ":material/lightbulb:"),
+        ("Watchlist", "관심 특허", ":material/bookmark:"),
+        ("Portfolio", "포트폴리오", ":material/folder:")]),
+    ("산출물", [
+        ("Reports", "리포트", ":material/description:")]),
     ("", [("Settings", "설정", ":material/settings:")]),
 ]
 
@@ -101,11 +101,11 @@ def get_results_df() -> pd.DataFrame:
 def require_results() -> pd.DataFrame:
     df = get_results_df()
     if df.empty:
-        st.info("아직 분석할 검색 결과가 없습니다. **STEP 1 · 아이디어 입력**에서 "
-                "아이디어를 한 번 입력·검색하면, 그 결과가 이 화면에 표시됩니다.")
-        if st.button("아이디어 입력으로 가기", type="primary",
-                     icon=":material/lightbulb:", key="goto_idea_empty"):
-            goto("Idea Canvas")
+        st.info("아직 분석할 검색 결과가 없습니다. **특허 검색**에서 "
+                "아이디어·키워드를 입력·검색하면, 그 결과가 이 화면에 표시됩니다.")
+        if st.button("특허 검색으로 가기", type="primary",
+                     icon=":material/search:", key="goto_idea_empty"):
+            goto("Patent Search")
     return df
 
 
@@ -328,82 +328,86 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
         df.iloc[0]["application_no"] if len(df) else None)
     st.session_state.pop("review", None)
     st.session_state.pop("timeline_lines", None)
-    st.success(f"검색 완료: {len(df)}건 수집. Patent Radar 에서 "
-               "결과를 확인하세요.")
+    st.session_state["_goto"] = "Idea Review"
+    st.success(f"검색 완료: {len(df)}건 수집. '아이디어 검토'로 이동합니다.")
+    st.rerun()
 
 
 # ============================================================ 0. Dashboard
 def page_dashboard():
-    ui.page_header("대시보드",
-                   "아이디어 한 번 입력 → 여러 화면에서 결과 분석 → 보고서. "
-                   "아이디어는 한 번만 입력하면 됩니다.")
-
-    # 사용 흐름 3단계
-    st.markdown(
-        "<div class='flow'>"
-        "<div class='step'><div class='n'>1</div><div><b>아이디어 입력</b>"
-        "<span>아이디어·키워드를 한 번 입력하고 검색을 실행합니다.</span></div></div>"
-        "<div class='arr'>→</div>"
-        "<div class='step'><div class='n'>2</div><div><b>결과 분석</b>"
-        "<span>유사특허·DNA·통계·도면·AI 검토를 같은 결과로 살펴봅니다.</span></div></div>"
-        "<div class='arr'>→</div>"
-        "<div class='step'><div class='n'>3</div><div><b>보고서 활용</b>"
-        "<span>관심 특허를 모으고 Excel·PDF로 내보냅니다.</span></div></div>"
-        "</div>", unsafe_allow_html=True)
-
     df = get_results_df()
-    idea = ss_get("idea", {})
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    try:
+        worklist = db.list_bookmarks()
+    except Exception:
+        worklist = []
+    s = monitoring.dashboard_stats(df if not df.empty else None, worklist)
 
-    if df.empty:
-        st.info("아직 분석한 아이디어가 없습니다. **STEP 1 · 아이디어 입력**에서 "
-                "아이디어를 입력하고 검색을 실행하면, 그 결과가 모든 분석 화면에 "
-                "표시됩니다.")
-        if st.button("아이디어 입력 시작하기", type="primary"):
-            goto("Idea Canvas")
-        return
+    # 헤더 + 마지막 업데이트 + 새로고침
+    hc1, hc2 = st.columns([3, 1])
+    with hc1:
+        ui.page_header("대시보드",
+                       "관심 기술·특허·경쟁사의 최신 변화를 한눈에 모니터링합니다.")
+    with hc2:
+        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+        st.caption(f"마지막 업데이트 · {s['updated']}")
+        if st.button("새로고침", icon=":material/refresh:",
+                     use_container_width=True):
+            st.rerun()
 
-    # 현재 분석 상태 카드
-    cards = stats.summary_cards(df)
-    scores = df["total_score"]
-    st.markdown(f"#### 현재 분석 — {idea.get('title','(제목 없음)')}")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("검색 유사특허", f"{len(df)}건")
-    m2.metric("최고 관련도", f"{scores.max():.0f}")
-    m3.metric("주의(70+)", f"{int((scores >= 70).sum())}건")
-    m4.metric("등록률", f"{cards['registered_rate']:.0f}%")
+    # 핵심 지표 카드 (2행 4열)
+    r1 = st.columns(4)
+    r1[0].metric("전체 관심 특허", f"{s['watch_total']}건")
+    r1[1].metric("신규 공개", f"{s['new_published']}건")
+    r1[2].metric("신규 등록", f"{s['new_registered']}건")
+    r1[3].metric("최근 신규 유사", f"{s['new_similar_30d']}건")
+    r2 = st.columns(4)
+    r2[0].metric("경쟁사 신규 출원", f"{s['competitor_new']}곳")
+    r2[1].metric("위험도 높은 특허", f"{s['high_risk']}건")
+    r2[2].metric("검토 필요", f"{s['review_needed']}건")
+    ac = monitoring.alert_counts()
+    r2[3].metric("신규 알림", f"{sum(ac.values())}건")
 
-    st.markdown("##### 바로가기")
-    g1, g2, g3, g4 = st.columns(4)
-    if g1.button("유사특허 분석", icon=":material/radar:",
-                 use_container_width=True):
-        goto("Patent Radar")
-    if g2.button("통계 · 기술분석", icon=":material/insights:",
-                 use_container_width=True):
-        goto("Landscape")
-    if g3.button("AI 검토", icon=":material/smart_toy:",
-                 use_container_width=True):
-        goto("AI Patent Review")
-    if g4.button("보고서 내보내기", icon=":material/description:",
-                 use_container_width=True):
-        goto("Export Center")
+    # 차트 영역
+    st.markdown("##### 관심 기술 동향")
+    c1, c2 = st.columns([3, 2])
+    c1.plotly_chart(px.line(monitoring.yearly_trend(), x="연도", y="건수",
+                            markers=True, title="월별/연도별 신규 특허 추이"),
+                    use_container_width=True)
+    c2.plotly_chart(px.pie(monitoring.status_distribution(), names="상태",
+                           values="건수", hole=0.55, title="상태별 분포"),
+                    use_container_width=True)
 
-    st.markdown("##### 관련도 상위 특허")
-    top = df.head(5)
-    table = pd.DataFrame({
-        "순위": top["rank"], "관련도": top["total_score"],
-        "특허명": top["title"], "출원인": top["applicant"],
-        "상태": top["status"], "등급": top["grade"],
-    })
-    st.dataframe(table, hide_index=True, use_container_width=True,
-                 column_config={"관련도": st.column_config.ProgressColumn(
-                     "관련도", min_value=0, max_value=100, format="%.0f")})
+    # 리스트 영역: 신규 유사 / 알림
+    l1, l2 = st.columns(2)
+    with l1:
+        st.markdown("##### 내 아이디어와 유사한 신규 특허 Top 5")
+        src = df.head(5) if not df.empty else pd.DataFrame(
+            monitoring.recent_patents(5))
+        if not df.empty:
+            tbl = pd.DataFrame({"관련도": src["total_score"],
+                                "특허명": src["title"],
+                                "출원인": src["applicant"],
+                                "상태": src["status"]})
+        else:
+            tbl = pd.DataFrame({"특허명": src["title"],
+                                "출원인": src["applicant"],
+                                "상태": src["status"],
+                                "출원일": src["application_date"]})
+        st.dataframe(tbl, hide_index=True, use_container_width=True)
+        if st.button("특허 검색으로 이동", icon=":material/search:"):
+            goto("Patent Search")
+    with l2:
+        st.markdown("##### 최근 알림")
+        for a in monitoring.alerts()[:6]:
+            st.markdown(ui.alert_row(a), unsafe_allow_html=True)
+        if st.button("알림 전체 보기", icon=":material/notifications:"):
+            goto("Alerts")
 
 
 # ============================================================ 1. Idea Canvas
 def page_idea_canvas():
-    ui.page_header("아이디어 입력",
-                   "아이디어를 입력하고 검색어를 확장한 뒤 KIPRIS 검색을 실행합니다.")
+    ui.page_header("특허 검색",
+                   "아이디어·키워드를 입력하고 검색어를 확장한 뒤 KIPRIS 검색을 실행합니다.")
     if not gemini_service.is_available():
         st.info("Gemini API Key 가 설정되어 있지 않습니다. 검색어 확장과 AI "
                 "분석은 키워드 기반으로 동작합니다. (Settings 에서 키 입력)")
@@ -806,11 +810,19 @@ def _lc_network(df):
                    + " / ".join(risky["title"].head(5)))
 
 
-def page_landscape():
+def page_landscape(flat: bool = False):
     ui.page_header("통계 · 기술분석",
                    "검색 결과의 출원 동향·기술 발전·공백·네트워크를 한 곳에서 분석합니다.")
     df = require_results()
     if df.empty:
+        return
+    if flat:  # 탭 안에 임베드될 때: 중첩 탭 없이 섹션으로 펼침
+        st.markdown("###### 출원 동향")
+        _lc_trends(df)
+        st.markdown("###### 기술 발전")
+        _lc_timeline(df)
+        st.markdown("###### 기술 공백 · 전략")
+        _lc_strategy(df)
         return
     t1, t2, t3, t4 = st.tabs(["출원 동향", "기술 발전", "기술 공백·전략", "네트워크맵"])
     with t1:
@@ -860,12 +872,7 @@ def page_drawing_intelligence():
                     key=f"draw_{name}_{p['application_no']}",
                     on_click=select_patent, args=(p["application_no"],),
                     use_container_width=True)
-
-    st.markdown("---")
-    p = get_selected_patent(df)
-    if p:
-        st.markdown("##### 선택 특허 상세")
-        render_patent_detail(p, ss_get("idea", {}).get("idea_dna", {}))
+    st.caption("도면을 선택하면 '유사특허' 탭의 상세 패널에 반영됩니다.")
 
 
 # ============================================================ 8. AI Review
@@ -1203,6 +1210,152 @@ def page_settings():
         f"- 동작 모드: **{'Mock Data' if config.use_mock_data() else 'KIPRIS 실연동'}**\n"
         f"- DB 경로: `{config.DB_PATH}`\n"
         f"- 샘플 데이터: `{config.SAMPLE_CSV}`")
+    st.markdown("---")
+    if st.button("브랜드 · UI 가이드 열기", icon=":material/palette:"):
+        goto("Brand Guide")
+
+
+# ============================================================ 아이디어 검토 (탭)
+def page_idea_review():
+    ui.page_header("아이디어 검토",
+                   "한 번의 검색 결과를 유사특허·DNA·통계·도면·AI 검토 탭으로 분석합니다.")
+    df = get_results_df()
+    if df.empty:
+        st.info("먼저 **특허 검색**에서 아이디어·키워드를 입력하고 검색하세요. "
+                "검색 결과가 이 화면의 모든 탭에 표시됩니다.")
+        if st.button("특허 검색으로 가기", type="primary",
+                     icon=":material/search:", key="goto_search_empty"):
+            goto("Patent Search")
+        return
+    tabs = st.tabs(["유사특허", "특허 DNA", "통계 · 기술분석", "도면", "AI 검토"])
+    st.session_state["_no_header"] = True
+    try:
+        with tabs[0]:
+            page_patent_radar()
+        with tabs[1]:
+            page_patent_dna()
+        with tabs[2]:
+            page_landscape(flat=True)
+        with tabs[3]:
+            page_drawing_intelligence()
+        with tabs[4]:
+            page_ai_review()
+    finally:
+        st.session_state["_no_header"] = False
+
+
+# ============================================================ 기술 모니터링
+def page_tech_monitor():
+    ui.page_header("기술 모니터링",
+                   "관심 기술 분야의 최신 출원 현황을 모니터링합니다. (MVP: 표본 데이터)")
+    st.caption(f"마지막 업데이트 · {monitoring.last_updated()}")
+    c1, c2 = st.columns(2)
+    c1.plotly_chart(px.bar(monitoring.ipc_distribution(), x="IPC", y="건수",
+                           title="IPC/CPC별 분포"), use_container_width=True)
+    c2.plotly_chart(px.line(monitoring.yearly_trend(), x="연도", y="건수",
+                            markers=True, title="연도별 신규 출원 추이"),
+                    use_container_width=True)
+    st.markdown("##### 최근 신규 특허")
+    rec = pd.DataFrame(monitoring.recent_patents(10))
+    st.dataframe(pd.DataFrame({
+        "특허명": rec["title"], "출원인": rec["applicant"],
+        "상태": rec["status"], "출원일": rec["application_date"],
+        "기술군": rec["technology_group"]}),
+        hide_index=True, use_container_width=True)
+    st.info("관심 키워드·IPC·기술군을 등록하면 해당 조건의 신규 특허를 모아 "
+            "보여주는 구조입니다. (등록은 관심 특허 화면 / 실데이터는 KIPRIS 연동 후)")
+
+
+# ============================================================ 경쟁사 분석
+def page_competitors():
+    ui.page_header("경쟁사 분석",
+                   "주요 출원인(경쟁사)별 출원 현황과 신규 동향입니다. (MVP: 표본 데이터)")
+    st.caption(f"마지막 업데이트 · {monitoring.last_updated()}")
+    comp = monitoring.competitor_table(10)
+    st.plotly_chart(px.bar(comp.head(8), x="경쟁사", y="총 출원",
+                           title="경쟁사별 출원 건수"), use_container_width=True)
+    st.dataframe(comp, hide_index=True, use_container_width=True)
+    st.info("경쟁사명을 등록하면 신규 출원을 지속 모니터링하는 구조입니다.")
+
+
+# ============================================================ 알림
+def page_alerts():
+    ui.page_header("알림",
+                   "관심 조건에 생긴 변화 알림입니다. (MVP: 표본 데이터)")
+    ac = monitoring.alert_counts()
+    m = st.columns(3)
+    m[0].metric("고위험", f"{ac['높음']}건")
+    m[1].metric("주의", f"{ac['중간']}건")
+    m[2].metric("참고", f"{ac['낮음']}건")
+    st.markdown("##### 알림 목록")
+    for a in monitoring.alerts():
+        st.markdown(ui.alert_row(a), unsafe_allow_html=True)
+
+
+# ============================================================ 포트폴리오
+def page_portfolio():
+    ui.page_header("포트폴리오",
+                   "관심 특허를 기술군별로 묶어 보는 포트폴리오 뷰입니다.")
+    try:
+        marks = db.list_bookmarks()
+    except Exception:
+        marks = []
+    if not marks:
+        st.info("관심 특허가 없습니다. 분석 화면에서 특허의 '검토 상태'를 지정하면 "
+                "여기에 기술군별로 모입니다.")
+        return
+    pf = pd.DataFrame([{
+        "기술군": m.get("technology_group") or "기타",
+        "검토상태": m.get("review_status") or "관심",
+        "특허명": m.get("title") or "-", "출원인": m.get("applicant") or "-",
+        "상태": m.get("status") or "-"} for m in marks])
+    g = pf.groupby("기술군").size().reset_index(name="건수")
+    c1, c2 = st.columns([2, 3])
+    c1.plotly_chart(px.pie(g, names="기술군", values="건수", hole=0.5,
+                           title="기술군별 관심 특허"), use_container_width=True)
+    c2.dataframe(pf, hide_index=True, use_container_width=True)
+
+
+# ============================================================ 브랜드 / UI 가이드
+def page_brand_guide():
+    if st.button("← 설정으로", key="bg_back"):
+        goto("Settings")
+    ui.page_header("브랜드 · UI 가이드",
+                   "IP³ 디자인 시스템 — 로고·컬러·컴포넌트 가이드.")
+    logo = ui._logo_uri(64, "color")
+    if logo:
+        st.markdown(f"<img src='{logo}' style='height:48px'/>",
+                    unsafe_allow_html=True)
+    st.markdown("##### 컬러 팔레트")
+    pal = [("Primary", ui.PRIMARY), ("Bright", ui.BRIGHT),
+           ("Deep Navy", ui.NAVY), ("Slate", ui.SLATE),
+           ("Light Gray", ui.LIGHT_GRAY)]
+    sw = " ".join(
+        f"<div style='display:inline-block;text-align:center;margin-right:10px'>"
+        f"<div style='width:64px;height:44px;border-radius:8px;background:{c};"
+        f"border:1px solid #E4E8F0'></div><div style='font-size:.7rem;"
+        f"color:#475569;margin-top:4px'>{n}<br>{c}</div></div>" for n, c in pal)
+    st.markdown(sw, unsafe_allow_html=True)
+    st.markdown("##### 배지")
+    st.markdown(
+        ui.badge_html("신규", "primary") + " " + ui.badge_html("등록", "success")
+        + " " + ui.badge_html("검토중", "warn") + " " + ui.badge_html("위험", "danger")
+        + " " + ui.status_badge("공개") + " " + ui.grade_badge("고유사/주의"),
+        unsafe_allow_html=True)
+    st.markdown("##### 버튼")
+    b1, b2, b3 = st.columns(3)
+    b1.button("Primary", type="primary", key="bg_p", use_container_width=True)
+    b2.button("Secondary", key="bg_s", use_container_width=True)
+    b3.button("아이콘", icon=":material/search:", key="bg_i",
+              use_container_width=True)
+    st.markdown("##### 카드 · 통계")
+    cc = st.columns(3)
+    cc[0].metric("통계 카드", "128", "예시")
+    cc[1].markdown(ui.info_card("정보 카드", "카드형 정보 블록입니다."),
+                   unsafe_allow_html=True)
+    cc[2].markdown(ui.alert_row({"type": "알림", "level": "중간",
+                                 "title": "알림 카드 예시", "message": "메시지",
+                                 "date": "2026-06-14"}), unsafe_allow_html=True)
 
 
 # ============================================================ 메인
@@ -1237,11 +1390,16 @@ def main():
     ui.app_header()
     pages = {
         "Dashboard": page_dashboard,
-        "Idea Canvas": page_idea_canvas, "Patent Radar": page_patent_radar,
-        "Patent DNA": page_patent_dna, "Landscape": page_landscape,
-        "Drawing Intelligence": page_drawing_intelligence,
-        "AI Patent Review": page_ai_review, "History": page_history,
-        "Export Center": page_export_center, "Settings": page_settings,
+        "Tech Monitor": page_tech_monitor,
+        "Competitors": page_competitors,
+        "Alerts": page_alerts,
+        "Patent Search": page_idea_canvas,
+        "Idea Review": page_idea_review,
+        "Watchlist": page_history,
+        "Portfolio": page_portfolio,
+        "Reports": page_export_center,
+        "Settings": page_settings,
+        "Brand Guide": page_brand_guide,
     }
     pages.get(ss["page"], page_dashboard)()
 
