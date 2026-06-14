@@ -17,8 +17,11 @@ except ImportError:
     genai = None
     _GENAI_AVAILABLE = False
 
-TEXT_MODEL = "gemini-1.5-flash"
+# 무료(AI Studio) 키에서 가용한 최신 모델 우선. 키/리전별 차이를 위해
+# 앞에서부터 시도하고, 성공한 모델을 기억해 재사용한다.
+TEXT_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 EMBED_MODEL = "models/text-embedding-004"
+_working_model = None
 
 
 def is_available() -> bool:
@@ -26,12 +29,17 @@ def is_available() -> bool:
     return _GENAI_AVAILABLE and bool(config.get_gemini_api_key())
 
 
+def _candidate_models():
+    return [_working_model] if _working_model else TEXT_MODELS
+
+
 def _get_model():
+    """현재 동작 모델(또는 1순위) GenerativeModel 반환. 실패 시 None."""
     if not is_available():
         return None
     try:
         genai.configure(api_key=config.get_gemini_api_key())
-        return genai.GenerativeModel(TEXT_MODEL)
+        return genai.GenerativeModel(_candidate_models()[0])
     except Exception:
         return None
 
@@ -59,14 +67,24 @@ def _extract_json(text: str) -> Optional[dict]:
 
 
 def _generate(prompt: str) -> Optional[str]:
-    model = _get_model()
-    if model is None:
+    """후보 모델을 순서대로 시도하고 성공 모델을 기억한다. 실패 시 None."""
+    global _working_model
+    if not is_available():
         return None
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        genai.configure(api_key=config.get_gemini_api_key())
     except Exception:
         return None
+    for mid in _candidate_models():
+        try:
+            response = genai.GenerativeModel(mid).generate_content(prompt)
+            _working_model = mid
+            return response.text
+        except Exception:
+            if _working_model == mid:
+                _working_model = None  # 다음엔 전체 후보 재시도
+            continue
+    return None
 
 
 def generate_json(prompt: str) -> Optional[dict]:
@@ -184,18 +202,26 @@ def caption_drawing(title: str, abstract: str) -> Optional[str]:
 
 def analyze_uploaded_image(image_bytes: bytes, mime_type: str) -> Optional[str]:
     """Gemini Vision 으로 업로드 도면에서 구성요소를 추출한다."""
-    model = _get_model()
-    if model is None:
+    global _working_model
+    if not is_available():
         return None
     try:
-        response = model.generate_content([
-            "이 건설/PC 관련 도면 이미지에서 식별 가능한 구성요소를 "
-            "한국어 불릿 목록으로 추출하세요.",
-            {"mime_type": mime_type, "data": image_bytes},
-        ])
-        return response.text
+        genai.configure(api_key=config.get_gemini_api_key())
     except Exception:
         return None
+    parts = [
+        "이 건설/PC 관련 도면 이미지에서 식별 가능한 구성요소를 "
+        "한국어 불릿 목록으로 추출하세요.",
+        {"mime_type": mime_type, "data": image_bytes},
+    ]
+    for mid in _candidate_models():
+        try:
+            response = genai.GenerativeModel(mid).generate_content(parts)
+            _working_model = mid
+            return response.text
+        except Exception:
+            continue
+    return None
 
 
 # ----------------------------------------------------------------- 임베딩
