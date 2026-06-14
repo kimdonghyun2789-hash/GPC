@@ -260,6 +260,40 @@ section[data-testid="stSidebar"] [data-testid="stMetricLabel"] p {{ color:#9AA8C
 .gpc-card .ct {{ font-size:.68rem; color:var(--faint); font-weight:700;
   letter-spacing:.08em; text-transform:uppercase; margin-bottom:.45rem; }}
 .gpc-card .cv {{ font-size:.88rem; color:var(--ink); line-height:1.6; }}
+ul.rev {{ margin:.2rem 0 0; padding-left:1.1rem; }}
+ul.rev li {{ font-size:.86rem; color:var(--ink); line-height:1.55;
+  margin-bottom:.2rem; }}
+
+/* ---------- 사이드바 버튼 내비게이션 ---------- */
+section[data-testid="stSidebar"] .stButton {{ margin-bottom:1px; }}
+section[data-testid="stSidebar"] .stButton > button {{
+  justify-content:flex-start; gap:.5rem; background:transparent; border:none;
+  color:#AEBAD2; box-shadow:none; font-weight:500; padding:.5rem .7rem;
+  min-height:2.4rem;
+}}
+section[data-testid="stSidebar"] .stButton > button:hover {{
+  background:rgba(255,255,255,.07); color:#fff;
+}}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
+  background:{BRIGHT}; color:#fff; box-shadow:0 2px 8px rgba(47,124,255,.4);
+}}
+.nav-sec {{ color:#6E7EA0; font-size:.64rem; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; margin:1rem .3rem .25rem; }}
+
+/* ---------- 대시보드 흐름 스트립 ---------- */
+.flow {{ display:flex; align-items:stretch; gap:10px; margin:.2rem 0 1rem;
+  flex-wrap:wrap; }}
+.flow .step {{ flex:1; min-width:210px; display:flex; gap:12px;
+  align-items:flex-start; background:var(--surface); border:1px solid var(--border);
+  border-radius:14px; padding:1rem 1.1rem; }}
+.flow .step .n {{ flex:none; width:30px; height:30px; border-radius:50%;
+  background:var(--primary); color:#fff; font-weight:800; display:flex;
+  align-items:center; justify-content:center; font-family:'Inter',{SANS}; }}
+.flow .step b {{ display:block; color:var(--ink); font-size:.95rem;
+  margin-bottom:2px; }}
+.flow .step span {{ font-size:.8rem; color:var(--muted); line-height:1.45; }}
+.flow .arr {{ display:flex; align-items:center; color:var(--faint);
+  font-size:1.2rem; }}
 </style>
         """,
         unsafe_allow_html=True,

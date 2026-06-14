@@ -4,8 +4,11 @@
 실행: streamlit run app.py
 """
 import hashlib
+import html as _html
 import io
 import json
+
+st_html_escape = _html.escape
 
 import pandas as pd
 import plotly.express as px
@@ -56,6 +59,23 @@ MENU_KO = {
     "Export Center": "보고서 · 내보내기",
     "Settings": "설정",
 }
+
+# 단계별 내비게이션 그룹 (key, 한글 라벨, 아이콘) — 사용 흐름이 보이도록 구성
+NAV_GROUPS = [
+    ("", [("Dashboard", "대시보드", ":material/dashboard:")]),
+    ("STEP 1 · 입력", [
+        ("Idea Canvas", "아이디어 입력", ":material/lightbulb:")]),
+    ("STEP 2 · 분석 결과", [
+        ("Patent Radar", "유사특허 분석", ":material/radar:"),
+        ("Patent DNA", "특허 DNA 비교", ":material/compare_arrows:"),
+        ("Landscape", "통계 · 기술분석", ":material/insights:"),
+        ("Drawing Intelligence", "도면 분석", ":material/image:"),
+        ("AI Patent Review", "AI 검토", ":material/smart_toy:")]),
+    ("STEP 3 · 활용", [
+        ("History", "기록 · 관심특허", ":material/bookmark:"),
+        ("Export Center", "보고서 · 내보내기", ":material/description:")]),
+    ("", [("Settings", "설정", ":material/settings:")]),
+]
 
 DEMO_IDEA = {
     "title": "중공 PC 기둥 하부 배수 및 점검 일체형 구조",
@@ -307,6 +327,74 @@ def run_search_pipeline(idea: dict, expansion: dict, top_n: int,
                "결과를 확인하세요.")
 
 
+# ============================================================ 0. Dashboard
+def page_dashboard():
+    ui.page_header("대시보드",
+                   "아이디어 한 번 입력 → 여러 화면에서 결과 분석 → 보고서. "
+                   "아이디어는 한 번만 입력하면 됩니다.")
+
+    # 사용 흐름 3단계
+    st.markdown(
+        "<div class='flow'>"
+        "<div class='step'><div class='n'>1</div><div><b>아이디어 입력</b>"
+        "<span>아이디어·키워드를 한 번 입력하고 검색을 실행합니다.</span></div></div>"
+        "<div class='arr'>→</div>"
+        "<div class='step'><div class='n'>2</div><div><b>결과 분석</b>"
+        "<span>유사특허·DNA·통계·도면·AI 검토를 같은 결과로 살펴봅니다.</span></div></div>"
+        "<div class='arr'>→</div>"
+        "<div class='step'><div class='n'>3</div><div><b>보고서 활용</b>"
+        "<span>관심 특허를 모으고 Excel·PDF로 내보냅니다.</span></div></div>"
+        "</div>", unsafe_allow_html=True)
+
+    df = get_results_df()
+    idea = ss_get("idea", {})
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    if df.empty:
+        st.info("아직 분석한 아이디어가 없습니다. **STEP 1 · 아이디어 입력**에서 "
+                "아이디어를 입력하고 검색을 실행하면, 그 결과가 모든 분석 화면에 "
+                "표시됩니다.")
+        if st.button("아이디어 입력 시작하기", type="primary"):
+            goto("Idea Canvas")
+        return
+
+    # 현재 분석 상태 카드
+    cards = stats.summary_cards(df)
+    scores = df["total_score"]
+    st.markdown(f"#### 현재 분석 — {idea.get('title','(제목 없음)')}")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("검색 유사특허", f"{len(df)}건")
+    m2.metric("최고 관련도", f"{scores.max():.0f}")
+    m3.metric("주의(70+)", f"{int((scores >= 70).sum())}건")
+    m4.metric("등록률", f"{cards['registered_rate']:.0f}%")
+
+    st.markdown("##### 바로가기")
+    g1, g2, g3, g4 = st.columns(4)
+    if g1.button("유사특허 분석", icon=":material/radar:",
+                 use_container_width=True):
+        goto("Patent Radar")
+    if g2.button("통계 · 기술분석", icon=":material/insights:",
+                 use_container_width=True):
+        goto("Landscape")
+    if g3.button("AI 검토", icon=":material/smart_toy:",
+                 use_container_width=True):
+        goto("AI Patent Review")
+    if g4.button("보고서 내보내기", icon=":material/description:",
+                 use_container_width=True):
+        goto("Export Center")
+
+    st.markdown("##### 관련도 상위 특허")
+    top = df.head(5)
+    table = pd.DataFrame({
+        "순위": top["rank"], "관련도": top["total_score"],
+        "특허명": top["title"], "출원인": top["applicant"],
+        "상태": top["status"], "등급": top["grade"],
+    })
+    st.dataframe(table, hide_index=True, use_container_width=True,
+                 column_config={"관련도": st.column_config.ProgressColumn(
+                     "관련도", min_value=0, max_value=100, format="%.0f")})
+
+
 # ============================================================ 1. Idea Canvas
 def page_idea_canvas():
     ui.page_header("아이디어 입력",
@@ -425,6 +513,15 @@ def page_patent_radar():
     if df.empty:
         return
     top_n = ss_get("top_n", 10)
+
+    # ---- 요약 카드 4개
+    _cards = stats.summary_cards(df)
+    _sc = df["total_score"]
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("전체 유사특허", f"{len(df)}건")
+    k2.metric("최고 관련도", f"{_sc.max():.0f}")
+    k3.metric("주의 (70+)", f"{int((_sc >= 70).sum())}건")
+    k4.metric("평균 관련도", f"{_sc.mean():.0f}")
 
     # ---- 필터
     with st.expander("필터", expanded=False):
@@ -793,28 +890,31 @@ def page_ai_review():
         if ss_get("review_method") == "fallback":
             st.caption("Gemini 미사용 — 규칙 기반 1차 검토 결과입니다.")
 
-        st.markdown("##### 가장 유사한 특허")
-        for item in review.get("most_risky_patents", []) or ["-"]:
-            st.markdown(f"- {item}")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("##### 공통 구성")
-            for item in review.get("common_points", []) or ["-"]:
-                st.markdown(f"- {item}")
-            st.markdown("##### 청구항 확인 필요 문구")
-            for item in review.get("claim_check_points", []) or ["-"]:
-                st.markdown(f"- {item}")
-        with c2:
-            st.markdown("##### 차이 구성 / 핵심 차별 포인트")
-            for item in review.get("different_points", []) or ["-"]:
-                st.markdown(f"- {item}")
-            for item in review.get("key_differentiators", []):
-                st.markdown(f"- {item}")
-            st.markdown("##### 회피설계 검토 포인트")
-            for item in review.get("design_around_points", []) or ["-"]:
-                st.markdown(f"- {item}")
-        st.markdown("##### 출원 검토 참고 의견")
-        st.info(review.get("review_comment", "-"))
+        def _section(title, items):
+            lis = "".join(
+                f"<li>{st_html_escape(str(x))}</li>" for x in (items or ["-"]))
+            return (f"<div class='gpc-card' style='margin-bottom:14px'>"
+                    f"<div class='ct'>{title}</div>"
+                    f"<ul class='rev'>{lis}</ul></div>")
+
+        secs = [
+            ("가장 유사한 특허", review.get("most_risky_patents", [])),
+            ("공통 구성", review.get("common_points", [])),
+            ("차이 구성", review.get("different_points", [])),
+            ("핵심 차별 포인트", review.get("key_differentiators", [])),
+            ("청구항 확인 필요", review.get("claim_check_points", [])),
+            ("회피설계 검토", review.get("design_around_points", [])),
+        ]
+        col_l, col_r = st.columns(2)
+        for i, (t, items) in enumerate(secs):
+            (col_l if i % 2 == 0 else col_r).markdown(
+                _section(t, items), unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='gpc-card' style='background:#EAF1FF;"
+            f"border-color:#CFE0FF'><div class='ct' style='color:#0057FF'>"
+            f"출원 검토 참고 의견</div><div class='cv'>"
+            f"{st_html_escape(review.get('review_comment','-'))}</div></div>",
+            unsafe_allow_html=True)
 
 
 # ============================================================ History
@@ -1086,27 +1186,49 @@ def page_settings():
 
 # ============================================================ 메인
 def main():
+    ss = st.session_state
+    if "page" not in ss:
+        ss["page"] = "Dashboard"
+    if ss.get("_goto"):                      # 바로가기 버튼이 설정한 이동
+        ss["page"] = ss.pop("_goto")
+
     with st.sidebar:
         ui.sidebar_brand()
-        choice = st.radio("메뉴", MENU, label_visibility="collapsed",
-                          format_func=lambda k: MENU_KO.get(k, k))
+        for gtitle, items in NAV_GROUPS:
+            if gtitle:
+                st.markdown(f"<div class='nav-sec'>{gtitle}</div>",
+                            unsafe_allow_html=True)
+            for key, label, icon in items:
+                active = ss["page"] == key
+                if st.button(label, icon=icon, key=f"nav_{key}",
+                             use_container_width=True,
+                             type="primary" if active else "secondary"):
+                    ss["page"] = key
+                    st.rerun()
         df = get_results_df()
         if not df.empty:
-            st.markdown("<div style='height:18px'></div>",
+            st.markdown("<div style='height:12px'></div>",
                         unsafe_allow_html=True)
             c1, c2 = st.columns(2)
             c1.metric("검색 결과", f"{len(df)}")
-            c2.metric("최고 유사도", f"{df['total_score'].max():.0f}")
+            c2.metric("최고 관련도", f"{df['total_score'].max():.0f}")
 
     ui.app_header()
     pages = {
+        "Dashboard": page_dashboard,
         "Idea Canvas": page_idea_canvas, "Patent Radar": page_patent_radar,
         "Patent DNA": page_patent_dna, "Landscape": page_landscape,
         "Drawing Intelligence": page_drawing_intelligence,
         "AI Patent Review": page_ai_review, "History": page_history,
         "Export Center": page_export_center, "Settings": page_settings,
     }
-    pages[choice]()
+    pages.get(ss["page"], page_dashboard)()
+
+
+def goto(page_key: str):
+    """다른 화면으로 이동 (바로가기 버튼용)."""
+    st.session_state["_goto"] = page_key
+    st.rerun()
 
 
 if __name__ == "__main__":
