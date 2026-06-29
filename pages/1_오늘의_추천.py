@@ -17,8 +17,9 @@ from utils.ui import render_logo
 settings = settings_service.get_all()
 today = date_utils.today()
 
-render_logo(width=200)
-st.markdown("#### 오늘의 추천")
+render_logo(width=188)
+st.markdown('<div class="page-sub">오늘 점심, 바로 결정하세요 — 1·2·3순위를 한 번에</div>',
+            unsafe_allow_html=True)
 render_today_summary(settings)
 st.divider()
 
@@ -42,8 +43,8 @@ user_request = st.text_input(
 )
 
 col1, col2 = st.columns([0.7, 0.3])
-recommend_clicked = col1.button("🍽️ 오늘 점심 추천받기", type="primary", use_container_width=True)
-reset_clicked = col2.button("🔄 다시 추천", use_container_width=True)
+recommend_clicked = col1.button("오늘 점심 추천받기", type="primary", use_container_width=True)
+reset_clicked = col2.button("다시 추천", use_container_width=True)
 
 if recommend_clicked or reset_clicked:
     with st.spinner("오늘의 점심을 고르는 중..."):

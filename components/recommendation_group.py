@@ -25,6 +25,7 @@ def render_recommendation_group(result: dict, settings: dict, today=None) -> Non
 
     # 하나의 컨테이너 안에 1·2·3순위를 세로로 붙여 표시 (PRD 11.3)
     with st.container():
-        st.subheader("오늘의 점심 1·2·3")
+        st.markdown('<div class="sec-title">오늘의 점심 추천</div>', unsafe_allow_html=True)
         for item in result["items"]:
             render_recommendation_card(item, settings, today)
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)

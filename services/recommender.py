@@ -211,8 +211,12 @@ def recommend_lunch(today=None, settings=None, user_request=None,
     # 점수순 정렬 -> 상위 top_n
     chosen.sort(key=lambda x: x["score"], reverse=True)
     items = chosen[:top_n]
+
+    # 추천점수를 사람이 이해하는 '매칭도(%)'로 변환 (전체 후보 최고점 기준)
+    max_score = max((c["score"] for c in chosen), default=1) or 1
     for i, item in enumerate(items, start=1):
         item["rank"] = i
+        item["match"] = max(45, min(99, round(item["score"] / max_score * 100)))
 
     result = {
         "items": items,

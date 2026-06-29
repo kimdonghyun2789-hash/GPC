@@ -12,12 +12,55 @@ import streamlit as st
 
 from services import db, ai_analyzer
 from utils import format_utils, date_utils
+from utils.ui import match_meta
+
+# 예산 상태 키 -> 점 색상 / 라벨
+_BUDGET_DOT = {
+    "ok": ("#1F6F54", "예산 적합"),
+    "near": ("#E8722B", "예산 약간 초과"),
+    "over": ("#C62828", "예산 초과"),
+}
 
 # 방문 불가 기본 사유 (PRD 14.2)
 UNAVAILABLE_REASONS = [
     "만석", "휴무", "메뉴 품절", "너무 멀다", "오늘 안 땡김",
     "팀원 반대", "가격 부담", "날씨 때문에 어려움", "기타",
 ]
+
+
+def _headline_reason(item: dict, meal_budget: int) -> str:
+    """식당 속성에서 가장 변별력 있는 추천 이유 1~2개를 골라 자연어 한 줄로 만든다."""
+    try:
+        walk = float(item.get("walk_minutes") or 99)
+    except (TypeError, ValueError):
+        walk = 99
+    try:
+        price = float(item.get("avg_price") or 0)
+    except (TypeError, ValueError):
+        price = 0
+    try:
+        rating = float(item.get("rating") or 0)
+    except (TypeError, ValueError):
+        rating = 0
+    crowd = item.get("crowd_level")
+
+    points: list[str] = []
+    if walk <= 4:
+        points.append(f"회사에서 가까운 편이에요 (도보 {int(walk)}분)")
+    if rating >= 4.2:
+        points.append(f"평이 좋은 편이에요 (★{rating:.1f})")
+    if price and price <= 8000:
+        points.append(f"가격이 부담 없어요 ({format_utils.won(price)})")
+    if crowd == "여유":
+        points.append("덜 붐벼서 빨리 먹기 좋아요")
+    if not item.get("last_visited"):
+        points.append("아직 안 가본 곳이라 새로 시도해볼 만해요")
+    if price and meal_budget and price <= meal_budget and not points:
+        points.append("오늘 예산에 잘 맞아요")
+    if not points:
+        points.append("오늘 조건에 두루 맞는 무난한 선택이에요")
+
+    return " · ".join(points[:2])
 
 
 def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
@@ -27,45 +70,57 @@ def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
     rank = item.get("rank", "-")
     meal_budget = settings.get("meal_budget", 12000)
 
-    with st.container(border=True):
-        # 헤더: 순위 배지 + 식당명 + 점수
+    with st.container(border=False):
         rank_cls = f"r{rank}" if isinstance(rank, int) and rank in (1, 2, 3) else "r3"
+        band_cls, band_label = match_meta(item.get("match", 70))
+
+        # 예산 점
+        bkey = format_utils.budget_status_label(item.get("avg_price"), meal_budget)
+        bcolor, blabel = _BUDGET_DOT.get(bkey, _BUDGET_DOT["ok"])
+
+        # 메타 라인
+        sep = '<span class="sep">·</span>'
+        meta = sep.join([
+            f"<span>도보 <b>{int(item.get('walk_minutes') or 0)}분</b></span>",
+            f"<span><b>{format_utils.won(item.get('avg_price'))}</b></span>",
+            f"<span>{format_utils.rating(item.get('rating'))}</span>",
+            f"<span>혼잡도 {item.get('crowd_level') or '-'}</span>",
+            f'<span><span class="mml-bdot" style="background:{bcolor}"></span>{blabel}</span>',
+        ])
+
+        # 핵심 사유 한 줄 (AI 코멘트가 있으면 우선, 없으면 식당별 변별 문구)
+        if item.get("ai_comment"):
+            why = item["ai_comment"]
+        else:
+            why = _headline_reason(item, meal_budget)
+
+        # 최근 방문 정보
+        last = item.get("last_visited")
+        vcount = item.get("visit_count", 0)
+        if last:
+            sublog = f"최근 방문 {last} · 누적 {vcount}회"
+        else:
+            sublog = "아직 방문한 적 없는 식당이에요"
+
+        ribbon = '<div class="mml-ribbon">오늘의 1순위 추천</div>' if rank == 1 else ""
+
         st.markdown(
-            f"""<div class="mml-card-head">
-  <div class="mml-rank {rank_cls}">{rank}</div>
-  <div class="mml-card-title">
-    <div class="name">{item['name']}</div>
-    <div class="sub">{item.get('category') or '-'} · {item.get('main_menu') or '-'}</div>
+            f"""<div class="mml-card {rank_cls}">
+  {ribbon}
+  <div class="mml-chead">
+    <div class="mml-rk">{rank}</div>
+    <div>
+      <div class="mml-name">{item['name']}</div>
+      <div class="mml-sub">{item.get('category') or '-'} · {item.get('main_menu') or '-'}</div>
+    </div>
+    <div class="mml-match {band_cls}"><div class="p">{item.get('match', '-')}%</div><div class="l">{band_label}</div></div>
   </div>
-  <div class="mml-score"><span class="s">{item.get('score', 0)}</span><span class="l">추천점수</span></div>
+  <div class="mml-meta">{meta}</div>
+  <div class="mml-why">{why}</div>
+  <div class="mml-sublog">{sublog}</div>
 </div>""",
             unsafe_allow_html=True,
         )
-
-        # 정보 라인
-        budget_text = format_utils.budget_status_text(item.get("avg_price"), meal_budget)
-        last = item.get("last_visited") or "방문 이력 없음"
-        d = '<span class="dot">·</span>'
-        st.markdown(
-            f'<div class="mml-info">{format_utils.walk(item.get("walk_minutes"))}{d}'
-            f'{format_utils.won(item.get("avg_price"))}{d}'
-            f'{format_utils.rating(item.get("rating"))}{d}'
-            f'혼잡도 {item.get("crowd_level") or "-"}{d}'
-            f'{budget_text}</div>'
-            f'<div class="mml-info" style="color:#9AA3AF;font-size:0.8rem;">'
-            f'최근방문일 {last}{d}누적 방문 {item.get("visit_count", 0)}회</div>',
-            unsafe_allow_html=True,
-        )
-
-        # 추천 사유 (배지)
-        reasons = item.get("reasons") or []
-        if reasons:
-            badges = "".join(f'<span class="mml-reason">{r}</span>' for r in reasons)
-            st.markdown(f'<div style="margin:4px 0 2px;">{badges}</div>', unsafe_allow_html=True)
-
-        # AI 코멘트
-        if item.get("ai_comment"):
-            st.info(f"🤖 {item['ai_comment']}")
 
         # 버튼 3종
         b1, b2, b3 = st.columns(3)

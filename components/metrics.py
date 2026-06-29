@@ -15,7 +15,11 @@ from utils.ui import summary_chips
 
 def render_today_summary(settings: dict) -> None:
     """오늘 날짜 + 주요 설정값 + 월 예산 사용률 요약(칩 UI)."""
-    st.markdown(f"##### 📅 {date_utils.format_korean_date()}")
+    st.markdown(
+        f'<div style="font-weight:800;font-size:1.0rem;color:#1F2A37;margin:2px 0 6px;">'
+        f'{date_utils.format_korean_date()}</div>',
+        unsafe_allow_html=True,
+    )
 
     status = budget.get_monthly_budget_status()
     summary_chips([

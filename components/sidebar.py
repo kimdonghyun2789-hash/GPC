@@ -22,9 +22,15 @@ def render_sidebar_header() -> None:
 
         settings = settings_service.get_all()
         if ai_client.is_available(settings):
-            st.success(f"🤖 AI 사용 중 · {settings.get('ai_provider')}")
+            dot, text = "#1F6F54", f"AI 사용 중 · {settings.get('ai_provider')}"
         elif settings.get("ai_enabled"):
-            st.caption("🤖 AI 설정 ON · API Key 없음 → 기본 추천만 동작")
+            dot, text = "#E8722B", "AI 설정 ON · API Key 없음"
         else:
-            st.caption("🤖 AI 사용 안 함 · 기본 추천만 동작")
+            dot, text = "#9AA3AF", "AI 사용 안 함"
+        st.markdown(
+            f'<div style="font-size:0.82rem;color:#6B7280;">'
+            f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+            f'background:{dot};margin-right:6px;"></span>{text}</div>',
+            unsafe_allow_html=True,
+        )
         st.divider()
