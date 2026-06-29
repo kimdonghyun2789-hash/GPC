@@ -46,10 +46,8 @@ render_sidebar_header()
 # 4) 멀티페이지 네비게이션
 pages = [
     st.Page("pages/1_오늘의_추천.py", title="오늘의 점심", icon="🍽️", default=True),
-    st.Page("pages/6_팀점심.py", title="팀 점심 투표", icon="👥"),
     st.Page("pages/2_식당_DB관리.py", title="식당 DB 관리", icon="🏪"),
-    st.Page("pages/3_방문기록.py", title="방문 기록", icon="📒"),
-    st.Page("pages/4_예산관리.py", title="예산 관리", icon="💰"),
+    st.Page("pages/3_방문기록.py", title="기록 · 예산", icon="📒"),
     st.Page("pages/5_설정.py", title="설정", icon="⚙️"),
 ]
 

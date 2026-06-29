@@ -100,11 +100,10 @@ GPC/
 │   ├─ budget_card.py
 │   ├─ sidebar.py
 │   └─ metrics.py
-├─ pages/                     # 멀티페이지
-│   ├─ 1_오늘의_추천.py
+├─ pages/                     # 멀티페이지 (오늘의 점심 · 식당 DB · 기록·예산 · 설정)
+│   ├─ 1_오늘의_추천.py        # 추천 + 팀 모드 인라인 투표
 │   ├─ 2_식당_DB관리.py
-│   ├─ 3_방문기록.py
-│   ├─ 4_예산관리.py
+│   ├─ 3_방문기록.py           # 방문 기록 + 예산 통합(탭)
 │   └─ 5_설정.py
 ├─ prompts/                   # AI 프롬프트(.md)
 │   ├─ recommendation_comment.md

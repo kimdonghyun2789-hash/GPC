@@ -11,6 +11,7 @@ import streamlit as st
 from services import db, recommender, settings as settings_service
 from components.metrics import render_today_summary
 from components.recommendation_group import render_recommendation_group
+from components.team_vote import render_team_vote
 from utils import date_utils
 from utils.ui import page_header, section
 
@@ -43,11 +44,18 @@ with st.container(border=True):
         who = who_col.radio("구분", who_options, horizontal=True, label_visibility="collapsed")
     is_team = who != "개인"
 
+    exclude_cats = []
+    attendee_names = []
     if is_team:
         party_size = party_col.number_input(
             "함께 먹는 인원", min_value=2, max_value=30, value=4, step=1,
             key="party_size_input", help="단체 가능·수용 인원에 맞는 식당만 추천합니다.",
         )
+        with st.expander("팀 옵션 (제외 메뉴 · 팀원 이름)"):
+            cats = sorted({r.get("category") for r in db.list_restaurants() if r.get("category")})
+            exclude_cats = st.multiselect("오늘 빼고 싶은 메뉴", cats)
+            names_raw = st.text_input("팀원 이름 (선택, 쉼표로 구분)", placeholder="예: 동현, 지민, 수아")
+            attendee_names = [n.strip() for n in names_raw.split(",") if n.strip()]
     else:
         party_size = 1
         party_col.caption("혼자 먹을 식당을 추천합니다.")
@@ -75,31 +83,46 @@ with st.container(border=True):
         tag_filter = st.multiselect("태그로 좁히기 (선택)", all_tags, default=[],
                                     placeholder="태그로 좁히기 — 예: 가성비, 해장")
 
+    label = "팀 점심 후보 뽑기" if is_team else "오늘 점심 추천받기"
     c_btn1, c_btn2 = st.columns([0.62, 0.38])
-    recommend_clicked = c_btn1.button("오늘 점심 추천받기", type="primary", use_container_width=True)
+    recommend_clicked = c_btn1.button(label, type="primary", use_container_width=True)
     reset_clicked = c_btn2.button("다시 추천", use_container_width=True)
-
-    # 팀이면 투표로 정하는 흐름을 안내
     if is_team:
-        try:
-            st.page_link("pages/6_팀점심.py", label="여럿이 의견이 갈리면 → 투표로 정하기", icon="👥")
-        except Exception:
-            st.caption("👥 여럿이 의견이 갈리면 사이드바의 '팀 점심 투표'에서 정할 수 있어요.")
+        st.caption("👥 팀 모드: 후보를 뽑은 뒤 아래에서 바로 투표로 정할 수 있어요.")
 
 if recommend_clicked or reset_clicked:
+    # 팀 모드는 투표용으로 후보를 5개 뽑는다
+    rec_settings = {**settings, "top_n": 5} if is_team else settings
     with st.spinner("오늘의 점심을 고르는 중..."):
         result = recommender.recommend_lunch(
-            today=today, settings=settings,
+            today=today, settings=rec_settings,
             user_request=user_request or None,
             party_size=int(party_size),
             mode=mode,
             tag_filter=tag_filter or None,
+            exclude_categories=exclude_cats or None,
         )
     st.session_state["recommendations"] = result
+    st.session_state["rec_is_team"] = is_team
+    st.session_state["rec_attendees"] = attendee_names
+    st.session_state["rec_exclude"] = exclude_cats
 
-# 저장된 추천 결과 표시 (방문/방문불가 처리 후에도 유지)
+# 저장된 추천 결과 표시 (방문/방문불가/투표 처리 후에도 유지)
 st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
 if "recommendations" in st.session_state:
-    render_recommendation_group(st.session_state["recommendations"], settings, today)
+    result = st.session_state["recommendations"]
+    if st.session_state.get("rec_is_team"):
+        st.markdown('<div class="sec-title">오늘의 팀 점심 후보</div>', unsafe_allow_html=True)
+        if result.get("oneliner"):
+            st.markdown(f'<div class="mml-oneliner">💬 {result["oneliner"]}</div>',
+                        unsafe_allow_html=True)
+        if result.get("empty"):
+            st.warning(result.get("message", "추천할 식당이 없습니다."))
+        else:
+            render_team_vote(result["items"],
+                             st.session_state.get("rec_attendees", []),
+                             st.session_state.get("rec_exclude", []), today)
+    else:
+        render_recommendation_group(result, settings, today)
 else:
-    st.caption("위의 [오늘 점심 추천받기] 버튼을 눌러 오늘의 1·2·3순위를 받아보세요.")
+    st.caption("위의 [추천받기] 버튼을 눌러 오늘의 점심 후보를 받아보세요.")
