@@ -44,6 +44,35 @@ if prefs_saved:
 st.divider()
 
 # ------------------------------------------------------------------
+# 팀원 관리 (고정 멤버 + 비선호 메뉴)
+# ------------------------------------------------------------------
+st.subheader("팀원 관리")
+st.caption("팀원을 등록해두면 팀 점심에서 이름만 체크하면 되고, 비선호 메뉴는 후보에서 자동 제외됩니다.")
+members = db.list_team_members()
+if members:
+    for m in members:
+        mc1, mc2, mc3 = st.columns([0.32, 0.5, 0.18])
+        mc1.markdown(f"**{m['name']}**")
+        mc2.caption("비선호: " + (", ".join(m["disliked_categories"]) or "없음"))
+        if mc3.button("삭제", key=f"delmem_{m['id']}", use_container_width=True):
+            db.delete_team_member(m["id"])
+            st.rerun()
+
+with st.form("add_member_form", clear_on_submit=True):
+    a1, a2 = st.columns([0.4, 0.6])
+    new_name = a1.text_input("이름", placeholder="예: 동현")
+    new_dislikes = a2.multiselect("비선호 메뉴", categories)
+    if st.form_submit_button("팀원 추가", type="primary"):
+        if new_name.strip():
+            db.add_team_member(new_name.strip(), new_dislikes)
+            st.success(f"'{new_name}' 팀원을 추가했습니다.")
+            st.rerun()
+        else:
+            st.error("이름을 입력해주세요.")
+
+st.divider()
+
+# ------------------------------------------------------------------
 # 추천 조건
 # ------------------------------------------------------------------
 st.subheader("추천 조건")

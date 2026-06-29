@@ -51,11 +51,25 @@ with st.container(border=True):
             "함께 먹는 인원", min_value=2, max_value=30, value=4, step=1,
             key="party_size_input", help="단체 가능·수용 인원에 맞는 식당만 추천합니다.",
         )
-        with st.expander("팀 옵션 (제외 메뉴 · 팀원 이름)"):
+        with st.expander("팀 옵션 (참석자 · 제외 메뉴)"):
             cats = sorted({r.get("category") for r in db.list_restaurants() if r.get("category")})
-            exclude_cats = st.multiselect("오늘 빼고 싶은 메뉴", cats)
-            names_raw = st.text_input("팀원 이름 (선택, 쉼표로 구분)", placeholder="예: 동현, 지민, 수아")
-            attendee_names = [n.strip() for n in names_raw.split(",") if n.strip()]
+            members = db.list_team_members()
+            auto_exclude = []
+            if members:
+                names_by = {m["name"]: m for m in members}
+                picked = st.multiselect("오늘 참석자", list(names_by.keys()),
+                                        help="등록된 팀원의 비선호 메뉴는 자동으로 제외됩니다.")
+                attendee_names = picked
+                for nm in picked:
+                    auto_exclude += names_by[nm]["disliked_categories"]
+                if auto_exclude:
+                    st.caption("자동 제외 메뉴: " + ", ".join(sorted(set(auto_exclude))))
+            else:
+                names_raw = st.text_input("팀원 이름 (쉼표로 구분)", placeholder="예: 동현, 지민, 수아")
+                attendee_names = [n.strip() for n in names_raw.split(",") if n.strip()]
+                st.caption("팁: 설정 > 팀원 관리에서 팀원을 등록하면 체크만으로 참석자를 고를 수 있어요.")
+            manual_exclude = st.multiselect("추가로 빼고 싶은 메뉴", cats)
+            exclude_cats = sorted(set(auto_exclude) | set(manual_exclude))
     else:
         party_size = 1
         party_col.caption("혼자 먹을 식당을 추천합니다.")

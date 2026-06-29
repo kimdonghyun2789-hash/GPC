@@ -14,8 +14,8 @@ from collections import Counter
 
 import streamlit as st
 
-from services import db
-from utils import format_utils
+from services import db, naver_map
+from utils import format_utils, date_utils
 
 
 def render_team_vote(items: list[dict], attendees: list[str], exclude: list[str],
@@ -75,7 +75,26 @@ def render_team_vote(items: list[dict], attendees: list[str], exclude: list[str]
             result = db.save_visit(winner["id"], today, actual_price=winner.get("avg_price"))
             (st.success if result["ok"] else st.warning)(result["message"])
 
+        _render_share_text(items, votes, winner, attendees, today)
+
     _render_team_history()
+
+
+def _render_share_text(items, votes, winner, attendees, today) -> None:
+    """결정 결과(투표 집계 포함)를 팀 채팅에 붙여넣기 좋은 텍스트로 보여준다."""
+    with st.expander("📋 결과 공유 (복사해서 팀 채팅에 붙여넣기)"):
+        lines = [f"오늘 팀 점심 결정 ({date_utils.format_korean_date(today)})"]
+        if attendees:
+            lines.append(f"참석: {', '.join(attendees)}")
+        lines.append(f"➡️ {winner['name']} 으로 결정!")
+        lines.append(f"   {naver_map.map_link(winner['name'], winner.get('address'))}")
+        lines.append("")
+        lines.append("[투표 결과]")
+        ranked = sorted(items, key=lambda x: votes.get(x["id"], 0), reverse=True)
+        for it in ranked:
+            mark = " ✅" if it["id"] == winner["id"] else ""
+            lines.append(f"- {it['name']} {votes.get(it['id'], 0)}표{mark}")
+        st.code("\n".join(lines), language=None)
 
 
 def _render_team_history() -> None:

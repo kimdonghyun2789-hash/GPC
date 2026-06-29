@@ -199,6 +199,17 @@ def init_db() -> None:
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS team_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            disliked_categories TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS dislikes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             restaurant_id INTEGER NOT NULL,
@@ -669,6 +680,42 @@ def save_preferences(prefs: dict) -> None:
          vals["preferred_tags"], vals["disliked_tags"],
          prefs.get("default_budget"), prefs.get("repeat_limit_days")),
     )
+    conn.commit()
+    conn.close()
+
+
+def add_team_member(name: str, disliked_categories: list[str] = None) -> None:
+    """팀원을 추가/갱신한다(이름 기준)."""
+    name = (name or "").strip()
+    if not name:
+        return
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO team_members (name, disliked_categories) VALUES (?, ?) "
+        "ON CONFLICT(name) DO UPDATE SET disliked_categories = excluded.disliked_categories",
+        (name, ", ".join(disliked_categories or [])),
+    )
+    conn.commit()
+    conn.close()
+
+
+def list_team_members() -> list[dict]:
+    """팀원 목록(이름 + 비선호 메뉴 리스트)."""
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM team_members ORDER BY name").fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["disliked_categories"] = [x.strip() for x in (d.get("disliked_categories") or "").split(",") if x.strip()]
+        result.append(d)
+    return result
+
+
+def delete_team_member(member_id: int) -> None:
+    """팀원을 삭제한다."""
+    conn = get_connection()
+    conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     conn.commit()
     conn.close()
 
