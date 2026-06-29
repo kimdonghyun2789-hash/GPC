@@ -15,7 +15,7 @@ from services import ai_client, settings as settings_service
 def render_sidebar_header() -> None:
     """사이드바에 슬로건과 AI 상태를 표시한다(브랜드 로고는 st.logo가 최상단에 고정)."""
     with st.sidebar:
-        st.caption("오늘 점심, 1·2·3순위로 바로 결정")
+        st.caption("make my lunch")
 
         settings = settings_service.get_all()
         if ai_client.is_available(settings):

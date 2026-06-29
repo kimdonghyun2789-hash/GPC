@@ -29,8 +29,8 @@ st.set_page_config(
 
 # 2) 사이드바 최상단(좌측 맨 위)에 브랜드 로고 고정 (네비게이션 위)
 st.logo(
-    os.path.join(_ASSETS, "mml_logo.svg"),
-    icon_image=os.path.join(_ASSETS, "mml_icon.svg"),
+    os.path.join(_ASSETS, "mml_logo.png"),
+    icon_image=os.path.join(_ASSETS, "mml_icon.png"),
     size="large",
 )
 

@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import streamlit as st
 
-GREEN = "#1F6F54"
-GREEN_DARK = "#14503B"
-ORANGE = "#E8722B"
+# 브랜드 컬러 (로고 기준: 네이비 + 오렌지)
+# 변수명은 호환을 위해 유지하되 값은 로고 네이비로 통일한다.
+GREEN = "#16294F"        # 브랜드 네이비 (포인트)
+GREEN_DARK = "#0E2044"   # 진한 네이비
+ORANGE = "#FC7053"       # 로고 핀 오렌지
 INK = "#1F2A37"
 MUTE = "#6B7280"
 
