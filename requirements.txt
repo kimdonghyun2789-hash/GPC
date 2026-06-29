@@ -5,6 +5,7 @@ streamlit>=1.31.0
 pandas>=2.0.0
 openpyxl>=3.1.0
 python-dotenv>=1.0.0
+requests>=2.31.0  # 네이버 지도 API 호출(선택 기능)
 
 # AI API는 선택 기능이다. 사용할 Provider 패키지만 설치하면 된다.
 # (없어도 기본 추천 기능은 정상 동작한다.)

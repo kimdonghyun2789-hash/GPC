@@ -101,3 +101,21 @@ st.info(
     "```\nOPENAI_API_KEY=...\nGEMINI_API_KEY=...\nANTHROPIC_API_KEY=...\n```\n"
     "API Key가 없어도 MML의 기본 추천 기능은 정상 동작합니다."
 )
+
+st.divider()
+
+# ------------------------------------------------------------------
+# 네이버 지도 설정
+# ------------------------------------------------------------------
+st.subheader("네이버 지도")
+from services import naver_map  # noqa: E402
+
+if naver_map.is_available():
+    st.write("- 네이버 지도 키: 🟢 등록됨 (주소 검색·지도 미리보기 사용 가능)")
+else:
+    st.write("- 네이버 지도 키: ⚪ 없음")
+    st.caption(
+        "`.env`에 `NAVER_MAP_CLIENT_ID`, `NAVER_MAP_CLIENT_SECRET`을 넣으면 "
+        "주소→좌표 자동 입력과 지도 미리보기가 켜집니다. "
+        "키가 없어도 '네이버 지도에서 보기' 링크와 기본 추천은 정상 동작합니다."
+    )

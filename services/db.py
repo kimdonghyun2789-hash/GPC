@@ -76,6 +76,10 @@ def init_db() -> None:
             open_days TEXT DEFAULT '월,화,수,목,금',
             can_takeout INTEGER DEFAULT 0,
             can_group INTEGER DEFAULT 1,
+            max_party INTEGER DEFAULT 0,
+            address TEXT,
+            latitude REAL,
+            longitude REAL,
             memo TEXT,
             map_url TEXT,
             ai_summary TEXT,
@@ -150,8 +154,25 @@ def init_db() -> None:
             (key, value),
         )
 
+    # 기존 DB 마이그레이션: 누락된 컬럼을 추가한다.
+    _migrate_restaurants(cur)
+
     conn.commit()
     conn.close()
+
+
+def _migrate_restaurants(cur) -> None:
+    """restaurants 테이블에 신규 컬럼(좌표/주소/수용인원)이 없으면 추가한다."""
+    existing = {row["name"] for row in cur.execute("PRAGMA table_info(restaurants)").fetchall()}
+    additions = {
+        "max_party": "INTEGER DEFAULT 0",
+        "address": "TEXT",
+        "latitude": "REAL",
+        "longitude": "REAL",
+    }
+    for col, ddl in additions.items():
+        if col not in existing:
+            cur.execute(f"ALTER TABLE restaurants ADD COLUMN {col} {ddl};")
 
 
 # ------------------------------------------------------------------
@@ -161,8 +182,8 @@ def init_db() -> None:
 _RESTAURANT_FIELDS = [
     "name", "category", "main_menu", "sub_menu", "walk_minutes", "avg_price",
     "rating", "crowd_level", "is_active", "is_blacklisted", "blacklist_until",
-    "open_days", "can_takeout", "can_group", "memo", "map_url",
-    "ai_summary", "ai_tags",
+    "open_days", "can_takeout", "can_group", "max_party", "address",
+    "latitude", "longitude", "memo", "map_url", "ai_summary", "ai_tags",
 ]
 
 

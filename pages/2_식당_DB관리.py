@@ -9,7 +9,7 @@ pages/2_식당_DB관리.py
 import pandas as pd
 import streamlit as st
 
-from services import db, importer
+from services import db, importer, naver_map
 from utils import date_utils
 
 st.title("식당 DB 관리")
@@ -68,6 +68,37 @@ with tab_add:
     options = ["[새 식당 추가]"] + [r["name"] for r in restaurants]
     pick = st.selectbox("수정할 식당 선택 (또는 새로 추가)", options)
     editing = None if pick == "[새 식당 추가]" else next(r for r in restaurants if r["name"] == pick)
+    geo_key = f"geo_{editing['id'] if editing else 'new'}"
+
+    # --- 네이버 지도로 주소 → 좌표 검색 (선택, 폼 밖에서 처리) ---
+    with st.expander("📍 네이버 지도로 주소 검색 (좌표 자동 입력)"):
+        if not naver_map.is_available():
+            st.caption("네이버 지도 키(NAVER_MAP_CLIENT_ID/SECRET)를 .env에 등록하면 "
+                       "주소만으로 좌표를 자동으로 채울 수 있습니다. (키 없이도 식당 등록은 가능)")
+        gq = st.text_input("주소 또는 장소명", key=f"gq_{geo_key}",
+                           placeholder="예: 서울 강남구 테헤란로 152")
+        if st.button("좌표 검색", key=f"gbtn_{geo_key}"):
+            if not naver_map.is_available():
+                st.warning("네이버 지도 키가 없어 검색할 수 없습니다. 주소/좌표를 직접 입력하세요.")
+            else:
+                geo = naver_map.geocode(gq)
+                if geo:
+                    st.session_state[geo_key] = geo
+                    st.success(f"좌표를 찾았습니다: {geo['address']} "
+                               f"({geo['lat']:.5f}, {geo['lng']:.5f})")
+                else:
+                    st.warning("주소를 찾지 못했습니다. 직접 입력해주세요.")
+
+    geo = st.session_state.get(geo_key)
+
+    def _pref(field, default=None):
+        """세션 검색결과 > 기존 데이터 > 기본값 순으로 초기값을 고른다."""
+        if geo and field in ("address", "latitude", "longitude"):
+            return {"address": geo["address"], "latitude": geo["lat"],
+                    "longitude": geo["lng"]}[field]
+        if editing and editing.get(field) is not None:
+            return editing.get(field)
+        return default
 
     with st.form("restaurant_form"):
         name = st.text_input("식당명 *", value=editing["name"] if editing else "")
@@ -87,9 +118,18 @@ with tab_add:
                              index=["여유", "보통", "혼잡", "매우혼잡"].index(editing["crowd_level"])
                              if editing and editing.get("crowd_level") in ["여유", "보통", "혼잡", "매우혼잡"] else 1)
         open_days = c9.text_input("영업요일", value=editing.get("open_days") if editing else "월,화,수,목,금")
-        c10, c11 = st.columns(2)
+        c10, c11, c12 = st.columns(3)
         can_takeout = c10.checkbox("포장가능", value=bool(editing.get("can_takeout")) if editing else False)
-        can_group = c11.checkbox("단체가능", value=bool(editing.get("can_group")) if editing else True)
+        can_group = c11.checkbox("단체가능", value=bool(_pref("can_group", True)))
+        max_party = c12.number_input("수용 인원(0=제한없음)", min_value=0,
+                                     value=int(_pref("max_party", 0) or 0))
+
+        address = st.text_input("주소", value=_pref("address", "") or "")
+        c13, c14 = st.columns(2)
+        latitude = c13.number_input("위도(latitude)", value=float(_pref("latitude", 0.0) or 0.0),
+                                    format="%.6f")
+        longitude = c14.number_input("경도(longitude)", value=float(_pref("longitude", 0.0) or 0.0),
+                                     format="%.6f")
         memo = st.text_area("메모", value=editing.get("memo") if editing else "")
 
         submitted = st.form_submit_button("저장", type="primary")
@@ -103,8 +143,11 @@ with tab_add:
                 "sub_menu": sub_menu, "walk_minutes": walk, "avg_price": price,
                 "rating": rating, "crowd_level": crowd, "open_days": open_days,
                 "can_takeout": 1 if can_takeout else 0, "can_group": 1 if can_group else 0,
+                "max_party": int(max_party), "address": address or None,
+                "latitude": latitude or None, "longitude": longitude or None,
                 "memo": memo, "map_url": map_url,
             })
+            st.session_state.pop(geo_key, None)
             st.success(f"'{name}' 정보를 저장했습니다.")
             st.rerun()
 

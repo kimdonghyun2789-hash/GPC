@@ -151,7 +151,7 @@ def _build_reasons(rest, last_days, meal_budget, exclude_recent, hint) -> list[s
 
 
 def recommend_lunch(today=None, settings=None, user_request=None,
-                    generate_comments: bool = True) -> dict:
+                    party_size: int = 1, generate_comments: bool = True) -> dict:
     """
     오늘의 점심 식당을 1·2·3순위로 추천한다.
     반환: {
@@ -197,6 +197,7 @@ def recommend_lunch(today=None, settings=None, user_request=None,
         chosen = _filter_and_score(
             base_candidates, settings, today, last_visit_map, count_map,
             meal_budget, budget_mode, hint, relax_level, unavailable_ids,
+            party_size,
         )
         if len(chosen) >= top_n:
             break
@@ -237,7 +238,8 @@ def recommend_lunch(today=None, settings=None, user_request=None,
 
 
 def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
-                      meal_budget, budget_mode, hint, relax_level, unavailable_ids):
+                      meal_budget, budget_mode, hint, relax_level, unavailable_ids,
+                      party_size=1):
     """완화 단계에 따라 소프트 필터를 적용하고 점수를 매긴 후보 리스트를 반환한다."""
     exclude_recent = settings.get("exclude_recent_days", 5)
     exclude_category = settings.get("exclude_category_days", 2)
@@ -256,6 +258,17 @@ def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
 
     scored = []
     for r in candidates:
+        # 인원수(단체) 조건: 2명 이상이면 단체 불가/수용인원 부족 식당 제외
+        if party_size and party_size > 1:
+            if not r.get("can_group"):
+                continue
+            try:
+                cap = int(r.get("max_party") or 0)
+            except (TypeError, ValueError):
+                cap = 0
+            if cap and party_size > cap:
+                continue
+
         # 도보시간 초과
         try:
             if float(r.get("walk_minutes", 0)) > max_walk:
@@ -283,7 +296,10 @@ def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
             "main_menu": r.get("main_menu"), "sub_menu": r.get("sub_menu"),
             "walk_minutes": r.get("walk_minutes"), "avg_price": r.get("avg_price"),
             "rating": r.get("rating"), "crowd_level": r.get("crowd_level"),
-            "map_url": r.get("map_url"),
+            "map_url": r.get("map_url"), "address": r.get("address"),
+            "latitude": r.get("latitude"), "longitude": r.get("longitude"),
+            "can_group": r.get("can_group"), "max_party": r.get("max_party"),
+            "can_takeout": r.get("can_takeout"),
             "last_visited": last_date, "visit_count": count_map.get(r["id"], 0),
             "score": score, "reasons": reasons, "breakdown": breakdown,
             "ai_comment": None,

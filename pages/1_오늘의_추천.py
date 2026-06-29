@@ -33,14 +33,21 @@ if db.count_restaurants() == 0:
         st.rerun()
     st.stop()
 
-# 자연어 요청 입력
-st.markdown("##### 오늘 뭐 먹고 싶어?")
-user_request = st.text_input(
+# 자연어 요청 + 인원 입력
+st.markdown('<div class="sec-title">오늘 뭐 먹고 싶어?</div>', unsafe_allow_html=True)
+req_col, party_col = st.columns([0.74, 0.26])
+user_request = req_col.text_input(
     "자연어 요청 (선택)",
     key="user_request_input",
     placeholder="예: 국물 있는 거, 멀지 않은 곳, 예산 안 넘는 곳",
     label_visibility="collapsed",
 )
+party_size = party_col.number_input(
+    "인원", min_value=1, max_value=30, value=1, step=1,
+    key="party_size_input", help="2명 이상이면 단체 가능·수용 인원에 맞는 식당만 추천합니다.",
+    label_visibility="collapsed",
+)
+party_col.caption(f"오늘 인원 {int(party_size)}명")
 
 col1, col2 = st.columns([0.7, 0.3])
 recommend_clicked = col1.button("오늘 점심 추천받기", type="primary", use_container_width=True)
@@ -51,6 +58,7 @@ if recommend_clicked or reset_clicked:
         result = recommender.recommend_lunch(
             today=today, settings=settings,
             user_request=user_request or None,
+            party_size=int(party_size),
         )
     st.session_state["recommendations"] = result
 

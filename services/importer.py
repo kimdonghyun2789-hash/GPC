@@ -25,6 +25,10 @@ _COLUMN_MAP = {
     "영업요일": "open_days",
     "포장가능": "can_takeout",
     "단체가능": "can_group",
+    "수용인원": "max_party",
+    "주소": "address",
+    "위도": "latitude",
+    "경도": "longitude",
     "메모": "memo",
     "지도URL": "map_url",
 }
@@ -61,12 +65,12 @@ def import_from_dataframe(df: pd.DataFrame) -> dict:
                 value = None
             if field in ("can_takeout", "can_group"):
                 value = _to_bool_int(value)
-            elif field in ("walk_minutes", "avg_price"):
+            elif field in ("walk_minutes", "avg_price", "max_party"):
                 try:
                     value = int(float(value)) if value is not None else None
                 except (TypeError, ValueError):
                     value = None
-            elif field == "rating":
+            elif field in ("rating", "latitude", "longitude"):
                 try:
                     value = float(value) if value is not None else None
                 except (TypeError, ValueError):

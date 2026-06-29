@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from services import db, ai_analyzer
+from services import db, ai_analyzer, naver_map
 from utils import format_utils, date_utils
 from utils.ui import match_meta
 
@@ -227,14 +227,35 @@ def _render_unavailable_form(item, today, unavail_key):
 
 
 def _render_detail(item, settings):
-    """[상세보기]: 점수 분해 + 누적 메모 기반 AI 요약."""
+    """[상세보기]: 위치/지도 + 단체 정보 + 점수 분해 + 누적 메모 AI 요약."""
+    # --- 위치 / 네이버 지도 ---
+    if item.get("address"):
+        st.caption(f"📍 {item['address']}")
+
+    map_bytes = naver_map.static_map_bytes(item.get("latitude"), item.get("longitude"))
+    if map_bytes:
+        st.image(map_bytes, use_container_width=True)
+
+    nlink = naver_map.map_link(item["name"], item.get("address"))
+    links = [f"[네이버 지도에서 보기 · 길찾기]({nlink})"]
+    if item.get("map_url"):
+        links.append(f"[등록된 지도 링크]({item['map_url']})")
+    st.markdown(" · ".join(links))
+
+    # --- 단체/포장 정보 ---
+    info_bits = []
+    info_bits.append("단체 가능" if item.get("can_group") else "단체 어려움")
+    if item.get("max_party"):
+        info_bits.append(f"최대 {int(item['max_party'])}인")
+    if item.get("can_takeout"):
+        info_bits.append("포장 가능")
+    st.caption(" · ".join(info_bits))
+
+    # --- 점수 구성 ---
     breakdown = item.get("breakdown") or {}
     if breakdown:
-        st.markdown("**점수 구성**")
-        st.json(breakdown, expanded=False)
-
-    if item.get("map_url"):
-        st.markdown(f"[지도에서 보기]({item['map_url']})")
+        with st.expander("추천 점수 구성 보기"):
+            st.json(breakdown, expanded=True)
 
     # 누적 메모 기반 AI 요약
     logs = [v for v in db.list_visit_logs() if v["restaurant_id"] == item["id"] and v.get("memo")]
