@@ -9,12 +9,49 @@ pages/5_설정.py
 
 import streamlit as st
 
-from services import settings as settings_service, ai_client, db
+from services import settings as settings_service, ai_client, db, naver_map, importer
 from utils.ui import page_header
 
-page_header("설정", "내 취향·추천 조건·AI·네이버 연동을 설정하세요")
+page_header("설정", "내 위치·취향·추천 조건·AI·네이버 연동을 설정하세요")
 
 s = settings_service.get_all()
+
+# ------------------------------------------------------------------
+# 내 위치 (네이버 식당 수집·도보시간 계산의 기준)
+# ------------------------------------------------------------------
+st.subheader("내 위치")
+st.caption("회사 주소나 지역명을 정해두면 네이버 식당 자동 수집과 도보시간 계산의 기준이 됩니다.")
+base_loc = st.text_input("기준 위치 (회사 주소 또는 지역명)",
+                         value=s.get("base_location", "") or "",
+                         placeholder="예: 서울 강남구 테헤란로 152 / 역삼역")
+loc_c1, loc_c2 = st.columns(2)
+if loc_c1.button("위치 저장", type="primary"):
+    settings_service.set("base_location", base_loc.strip())
+    st.success("내 위치를 저장했습니다.")
+if loc_c2.button("이 위치로 도보시간 자동 계산", disabled=not naver_map.is_available(),
+                 help="네이버 지도 키가 있으면 좌표 보유 식당의 도보시간을 자동 갱신합니다."):
+    loc = base_loc.strip() or (s.get("base_location") or "")
+    if not loc:
+        st.error("기준 위치를 먼저 입력/저장해주세요.")
+    else:
+        settings_service.set("base_location", loc)
+        res = importer.recompute_walk_minutes(loc)
+        (st.success if res["ok"] else st.error)(res["message"])
+
+# 연동 상태 한눈에
+_cur = settings_service.get_all()
+status_bits = [
+    ("네이버 식당검색", naver_map.is_search_available()),
+    ("네이버 지도", naver_map.is_available()),
+    (f"AI({_cur.get('ai_provider')})", ai_client.is_available(_cur)),
+]
+st.markdown(
+    "연동 상태 · " + "   ".join(
+        f"{'🟢' if ok else '⚪'} {name}" for name, ok in status_bits
+    )
+)
+
+st.divider()
 
 # ------------------------------------------------------------------
 # 내 취향 (user_preferences, PRD 5.5)
