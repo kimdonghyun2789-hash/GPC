@@ -59,6 +59,13 @@ party_size = party_col.number_input(
 )
 party_col.caption(f"오늘 인원 {int(party_size)}명")
 
+# 태그 필터 (선택) — 등록된 태그가 있을 때만 노출
+all_tags = db.all_tag_names()
+tag_filter = []
+if all_tags:
+    tag_filter = st.multiselect("태그로 좁히기 (선택)", all_tags, default=[],
+                                placeholder="예: 가성비, 해장, 빠른 점심")
+
 col1, col2 = st.columns([0.7, 0.3])
 recommend_clicked = col1.button("오늘 점심 추천받기", type="primary", use_container_width=True)
 reset_clicked = col2.button("다시 추천", use_container_width=True)
@@ -70,6 +77,7 @@ if recommend_clicked or reset_clicked:
             user_request=user_request or None,
             party_size=int(party_size),
             mode=mode,
+            tag_filter=tag_filter or None,
         )
     st.session_state["recommendations"] = result
 

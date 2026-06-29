@@ -70,6 +70,8 @@ def _passes_hard_filters(rest, today, max_walk, unavailable_ids):
             return False
     if rest["id"] in unavailable_ids:
         return False
+    if rest.get("status") == "폐업 의심":  # PRD 3.10: 기본 추천 제외
+        return False
     if not date_utils.is_open_today(rest.get("open_days"), today):
         return False
     return True
@@ -120,6 +122,10 @@ def _score_restaurant(rest, settings, today, last_visit_map, count_map,
     if hint and hint.get("prefer_new") and last_days is None:
         s_request += 8.0
 
+    # 자주 만석 식당 점심 피크 감점 (PRD 3.10)
+    s_peak = -8.0 if rest.get("is_frequent_full") else 0.0
+    s_request += s_peak
+
     # 랜덤 점수
     random_weight = settings.get("random_weight", 10)
     s_random = random.uniform(0, random_weight)
@@ -147,9 +153,10 @@ def _request_bonus(rest, hint) -> float:
     bonus = 0.0
     cat = str(rest.get("category") or "")
     menu = f"{rest.get('main_menu') or ''} {rest.get('sub_menu') or ''}"
+    tags = " ".join(rest.get("tags") or [])
 
     for kw in hint.get("keywords", []):
-        if kw and (kw in cat or kw in menu):
+        if kw and (kw in cat or kw in menu or kw in tags):
             bonus += 6.0
     for avoid in hint.get("avoid_categories", []):
         if avoid and (avoid in cat):
@@ -204,6 +211,7 @@ def _build_reasons(rest, last_days, meal_budget, exclude_recent, hint, avg_sat=N
 
 def recommend_lunch(today=None, settings=None, user_request=None,
                     party_size: int = 1, mode: str = None,
+                    tag_filter=None, exclude_categories=None,
                     generate_comments: bool = True) -> dict:
     """
     오늘의 점심 식당을 1·2·3순위로 추천한다.
@@ -235,6 +243,13 @@ def recommend_lunch(today=None, settings=None, user_request=None,
     count_map = db.visit_count_map()
     sat_map = db.avg_satisfaction_map()
 
+    # 태그/자주만석 정보를 각 식당에 부착
+    tmap = db.tags_map()
+    ffull = db.frequent_full_ids()
+    for r in all_rest:
+        r["tags"] = tmap.get(r["id"], [])
+        r["is_frequent_full"] = (r["id"] in ffull) or (r.get("status") == "자주 만석")
+
     # 자연어 요청 해석(AI 또는 규칙 기반) + 상황별 모드 힌트 병합
     hint = ai_analyzer.parse_natural_request(user_request, settings) if user_request else None
     hint = _merge_hints(hint, _hint_from_mode(mode))
@@ -244,6 +259,14 @@ def recommend_lunch(today=None, settings=None, user_request=None,
         r for r in all_rest
         if _passes_hard_filters(r, today, settings.get("max_walk_minutes", 10), unavailable_ids)
     ]
+
+    # 사용자 지정 필터(태그/제외 카테고리)는 완화 대상이 아니므로 먼저 적용한다
+    if exclude_categories:
+        excl = set(exclude_categories)
+        base_candidates = [r for r in base_candidates if r.get("category") not in excl]
+    if tag_filter:
+        tf = set(tag_filter)
+        base_candidates = [r for r in base_candidates if tf & set(r.get("tags") or [])]
 
     # 완화 단계: 0=기본, 1=카테고리해제, 2=최근방문완화, 3=도보15분, 4=동일, 5=예산제외해제
     relax_level = 0
@@ -264,9 +287,9 @@ def recommend_lunch(today=None, settings=None, user_request=None,
         return {"items": [], "relaxed": relaxed, "relax_level": relax_level, "empty": True,
                 "message": "조건에 맞는 식당이 없습니다. 설정을 조정하거나 식당을 추가해주세요."}
 
-    # 점수순 정렬 -> 상위 top_n
+    # 점수순 정렬 -> 카테고리 다양성 보정 후 상위 top_n (PRD 6.3)
     chosen.sort(key=lambda x: x["score"], reverse=True)
-    items = chosen[:top_n]
+    items = _diversify(chosen, top_n)
 
     # 추천점수를 사람이 이해하는 '매칭도(%)'로 변환 (전체 후보 최고점 기준)
     max_score = max((c["score"] for c in chosen), default=1) or 1
@@ -290,6 +313,27 @@ def recommend_lunch(today=None, settings=None, user_request=None,
                 item["ai_comment"] = comments.get(item["rank"])
 
     return result
+
+
+def _diversify(sorted_items, top_n, tolerance=12.0):
+    """
+    점수순 정렬된 후보에서 1·2·3순위가 같은 카테고리에 몰리지 않도록 보정한다.
+    각 슬롯에서 '최고점과 tolerance 이내' 후보 중 아직 안 쓴 카테고리를 우선 선택한다.
+    """
+    pool = list(sorted_items)
+    picked = []
+    used_categories = set()
+    while pool and len(picked) < top_n:
+        top_score = pool[0]["score"]
+        # 최고점과 tolerance 이내인 후보들 중에서 고른다
+        near_idx = [i for i, it in enumerate(pool) if top_score - it["score"] <= tolerance]
+        # 아직 등장하지 않은 카테고리를 우선, 없으면 최고점
+        choice = next((i for i in near_idx if pool[i].get("category") not in used_categories),
+                      near_idx[0])
+        it = pool.pop(choice)
+        picked.append(it)
+        used_categories.add(it.get("category"))
+    return picked
 
 
 def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
@@ -354,7 +398,8 @@ def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
             "map_url": r.get("map_url"), "address": r.get("address"),
             "latitude": r.get("latitude"), "longitude": r.get("longitude"),
             "can_group": r.get("can_group"), "max_party": r.get("max_party"),
-            "can_takeout": r.get("can_takeout"),
+            "can_takeout": r.get("can_takeout"), "tags": r.get("tags") or [],
+            "status": r.get("status"), "is_frequent_full": r.get("is_frequent_full"),
             "last_visited": last_date, "visit_count": count_map.get(r["id"], 0),
             "avg_satisfaction": (sat_map or {}).get(r["id"]),
             "score": score, "reasons": reasons, "breakdown": breakdown,

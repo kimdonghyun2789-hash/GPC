@@ -107,6 +107,21 @@ def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
 
         ribbon = '<div class="mml-ribbon">오늘의 1순위 추천</div>' if rank == 1 else ""
 
+        # 상태 경고 배지 (PRD 3.10)
+        status = item.get("status")
+        warn = ""
+        if status == "휴무 확인 필요":
+            warn = '<span class="mml-warn">휴무 확인 필요</span>'
+        elif item.get("is_frequent_full") or status == "자주 만석":
+            warn = '<span class="mml-warn">자주 만석 · 피크 주의</span>'
+
+        # 태그 칩 (PRD 3.2)
+        tags = item.get("tags") or []
+        tags_html = ""
+        if tags:
+            chips = "".join(f'<span class="mml-tag">#{t}</span>' for t in tags[:4])
+            tags_html = f'<div class="mml-tags">{chips}</div>'
+
         # 상단 띠(헤더): 순위 배지 + 이름 + 매칭. 카드 가장자리까지 채운다.
         st.markdown(
             f"""<div class="mml-head {rank_cls}">
@@ -122,7 +137,8 @@ def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
 </div>
 <div class="mml-meta">{meta}</div>
 <div class="mml-why">{why}</div>
-<div class="mml-sublog">{sublog}</div>""",
+{tags_html}
+<div class="mml-sublog">{sublog} {warn}</div>""",
             unsafe_allow_html=True,
         )
 

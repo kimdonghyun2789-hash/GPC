@@ -12,6 +12,12 @@ import streamlit as st
 from services import db, importer, naver_map, settings as settings_service
 from utils import date_utils
 
+# 태그 추천 목록 (PRD 3.2)
+TAG_SUGGESTIONS = [
+    "빠른 점심", "든든함", "가성비", "비쌈", "회식 가능", "혼밥 가능",
+    "해장", "깔끔", "매움", "국물", "면", "밥", "신규 방문", "자주 감", "주차 가능",
+]
+
 st.title("식당 DB 관리")
 
 tab_list, tab_naver, tab_add, tab_upload = st.tabs(
@@ -70,6 +76,7 @@ with tab_list:
     else:
         last_map = db.last_visited_date_map()
         count_map = db.visit_count_map()
+        tmap = db.tags_map()
         rows = []
         for r in restaurants:
             rows.append({
@@ -80,7 +87,8 @@ with tab_list:
                 "도보(분)": r.get("walk_minutes"),
                 "평균가격": r.get("avg_price"),
                 "선호도": r.get("rating"),
-                "혼잡도": r.get("crowd_level"),
+                "상태": r.get("status") or "정상",
+                "태그": ", ".join(tmap.get(r["id"], [])),
                 "최근방문일": last_map.get(r["id"], "-"),
                 "방문횟수": count_map.get(r["id"], 0),
                 "활성": "✅" if r.get("is_active") else "⛔",
@@ -170,6 +178,16 @@ with tab_add:
                                     format="%.6f")
         longitude = c14.number_input("경도(longitude)", value=float(_pref("longitude", 0.0) or 0.0),
                                      format="%.6f")
+        # 상태 + 태그 (PRD 3.10 / 3.2)
+        status_options = ["정상", "자주 만석", "휴무 확인 필요", "폐업 의심", "신규 확인 필요"]
+        cur_status = (editing.get("status") if editing else "정상") or "정상"
+        status = st.selectbox("상태", status_options,
+                              index=status_options.index(cur_status) if cur_status in status_options else 0)
+        cur_tags = db.list_tags(editing["id"]) if editing else []
+        tag_suggestions = sorted(set(TAG_SUGGESTIONS) | set(db.all_tag_names()) | set(cur_tags))
+        tags = st.multiselect("태그", tag_suggestions, default=cur_tags,
+                              help="빠른 점심·가성비·해장·국물 등. 추천 모드/검색에 활용됩니다.")
+        custom_tags = st.text_input("태그 직접 추가 (쉼표로 구분)", value="")
         memo = st.text_area("메모", value=editing.get("memo") if editing else "")
 
         submitted = st.form_submit_button("저장", type="primary")
@@ -178,15 +196,18 @@ with tab_add:
         if not name.strip():
             st.error("식당명은 필수입니다.")
         else:
-            db.upsert_restaurant({
+            rid = db.upsert_restaurant({
                 "name": name.strip(), "category": category, "main_menu": main_menu,
                 "sub_menu": sub_menu, "walk_minutes": walk, "avg_price": price,
                 "rating": rating, "crowd_level": crowd, "open_days": open_days,
                 "can_takeout": 1 if can_takeout else 0, "can_group": 1 if can_group else 0,
                 "max_party": int(max_party), "address": address or None,
                 "latitude": latitude or None, "longitude": longitude or None,
-                "memo": memo, "map_url": map_url,
+                "status": status, "memo": memo, "map_url": map_url,
             })
+            # 태그 동기화(선택 + 직접 입력)
+            all_tags = list(tags) + [t.strip() for t in custom_tags.split(",") if t.strip()]
+            db.set_tags(rid, all_tags)
             st.session_state.pop(geo_key, None)
             st.success(f"'{name}' 정보를 저장했습니다.")
             st.rerun()

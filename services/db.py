@@ -137,6 +137,20 @@ def init_db() -> None:
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS restaurant_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            restaurant_id INTEGER NOT NULL,
+            tag_name TEXT NOT NULL,
+            tag_type TEXT DEFAULT 'user',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (restaurant_id) REFERENCES restaurants(id),
+            UNIQUE (restaurant_id, tag_name)
+        );
+        """
+    )
+
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS api_sync_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             api_name TEXT,
@@ -145,6 +159,23 @@ def init_db() -> None:
             success INTEGER,
             error_message TEXT,
             requested_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recommendation_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_date DATE,
+            mode TEXT,
+            party_size INTEGER,
+            excluded_categories TEXT,
+            result_restaurant_1 INTEGER,
+            result_restaurant_2 INTEGER,
+            result_restaurant_3 INTEGER,
+            selected_restaurant_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         """
     )
@@ -185,6 +216,7 @@ def _migrate_restaurants(cur) -> None:
         "address": "TEXT",
         "latitude": "REAL",
         "longitude": "REAL",
+        "status": "TEXT DEFAULT '정상'",
     }
     for col, ddl in additions.items():
         if col not in existing:
@@ -199,7 +231,7 @@ _RESTAURANT_FIELDS = [
     "name", "category", "main_menu", "sub_menu", "walk_minutes", "avg_price",
     "rating", "crowd_level", "is_active", "is_blacklisted", "blacklist_until",
     "open_days", "can_takeout", "can_group", "max_party", "address",
-    "latitude", "longitude", "memo", "map_url", "ai_summary", "ai_tags",
+    "latitude", "longitude", "status", "memo", "map_url", "ai_summary", "ai_tags",
 ]
 
 
@@ -485,6 +517,105 @@ def unavailable_restaurant_ids(today=None) -> set[int]:
     ).fetchall()
     conn.close()
     return {r["restaurant_id"] for r in rows}
+
+
+# ------------------------------------------------------------------
+# 태그(restaurant_tags) (PRD 3.2 / 5.2)
+# ------------------------------------------------------------------
+
+def set_tags(restaurant_id: int, tags: list[str], tag_type: str = "user") -> None:
+    """식당의 태그를 주어진 목록으로 동기화한다(기존 태그 교체)."""
+    conn = get_connection()
+    conn.execute("DELETE FROM restaurant_tags WHERE restaurant_id = ?", (restaurant_id,))
+    for t in tags:
+        t = (t or "").strip()
+        if not t:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO restaurant_tags (restaurant_id, tag_name, tag_type) "
+            "VALUES (?, ?, ?)",
+            (restaurant_id, t, tag_type),
+        )
+    conn.commit()
+    conn.close()
+
+
+def list_tags(restaurant_id: int) -> list[str]:
+    """식당의 태그 목록."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT tag_name FROM restaurant_tags WHERE restaurant_id = ? ORDER BY tag_name",
+        (restaurant_id,),
+    ).fetchall()
+    conn.close()
+    return [r["tag_name"] for r in rows]
+
+
+def tags_map() -> dict[int, list[str]]:
+    """식당별 태그 목록 매핑(restaurant_id -> [tags])."""
+    conn = get_connection()
+    rows = conn.execute("SELECT restaurant_id, tag_name FROM restaurant_tags").fetchall()
+    conn.close()
+    result: dict[int, list[str]] = {}
+    for r in rows:
+        result.setdefault(r["restaurant_id"], []).append(r["tag_name"])
+    return result
+
+
+def all_tag_names() -> list[str]:
+    """등록된 모든 태그 이름(중복 제거)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT tag_name FROM restaurant_tags ORDER BY tag_name"
+    ).fetchall()
+    conn.close()
+    return [r["tag_name"] for r in rows]
+
+
+# ------------------------------------------------------------------
+# 식당 상태(status) (PRD 3.10)
+# ------------------------------------------------------------------
+
+def set_status(restaurant_id: int, status: str) -> None:
+    """식당 상태값을 변경한다."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE restaurants SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, restaurant_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def frequent_full_ids(threshold: int = 3) -> set[int]:
+    """방문 불가 사유에 '만석'이 threshold회 이상 누적된 식당 id(자주 만석)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT restaurant_id, COUNT(*) AS c FROM unavailable_logs "
+        "WHERE reason LIKE '%만석%' GROUP BY restaurant_id"
+    ).fetchall()
+    conn.close()
+    return {r["restaurant_id"] for r in rows if r["c"] >= threshold}
+
+
+def log_recommendation_run(mode, party_size, excluded_categories,
+                           result_ids, selected_id, run_date=None) -> None:
+    """추천/팀 결정 결과를 기록한다(PRD 5.4)."""
+    run_date = date_utils.to_date(run_date).isoformat()
+    ids = list(result_ids or []) + [None, None, None]
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO recommendation_runs
+            (run_date, mode, party_size, excluded_categories,
+             result_restaurant_1, result_restaurant_2, result_restaurant_3, selected_restaurant_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (run_date, mode, party_size, ", ".join(excluded_categories or []),
+         ids[0], ids[1], ids[2], selected_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def log_api_sync(api_name: str, query: str, response_count: int,
