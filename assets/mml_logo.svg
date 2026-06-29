@@ -1,0 +1,26 @@
+<svg width="176" height="50" viewBox="0 0 184 52" fill="none"
+     xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MML 머물래">
+  <defs>
+    <linearGradient id="mmlBadge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F9072"/>
+      <stop offset="1" stop-color="#14503B"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="48" height="48" rx="15" fill="url(#mmlBadge)"/>
+  <!-- 김(스팀) -->
+  <path d="M22 15 q-3.2 -3 0 -6.2" stroke="#FFFFFF" stroke-width="1.8"
+        stroke-linecap="round" fill="none" opacity="0.8"/>
+  <path d="M30 15 q3.2 -3 0 -6.2" stroke="#FFFFFF" stroke-width="1.8"
+        stroke-linecap="round" fill="none" opacity="0.8"/>
+  <!-- 밥(오렌지 봉우리) -->
+  <path d="M16 26 Q26 16 36 26 Z" fill="#E8722B"/>
+  <!-- 그릇 -->
+  <ellipse cx="26" cy="26" rx="11.5" ry="2.4" fill="#FFFFFF"/>
+  <path d="M15 26 L37 26 Q37 40 26 40 Q15 40 15 26 Z" fill="#FFFFFF"/>
+  <path d="M19.5 33 Q26 36 32.5 33" stroke="#E4EDE9" stroke-width="1.4"
+        fill="none" stroke-linecap="round"/>
+  <!-- 워드마크 -->
+  <text x="63" y="30" font-family="Pretendard, sans-serif" font-size="26"
+        font-weight="800" fill="#1F6F54" letter-spacing="0.3">MML</text>
+  <text x="64" y="44" font-family="Pretendard, sans-serif" font-size="10.5" font-weight="700" fill="#E8722B" letter-spacing="6.5">머물래</text>
+</svg>

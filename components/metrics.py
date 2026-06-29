@@ -26,6 +26,6 @@ def render_today_summary(settings: dict) -> None:
         ("최근 방문 제외", f"{settings.get('exclude_recent_days', 5)}일"),
         ("같은 메뉴 제외", f"{settings.get('exclude_category_days', 2)}일"),
         ("최대 도보", f"{settings.get('max_walk_minutes', 10)}분"),
-        ("1회 예산", format_utils.won(settings.get("meal_budget", 12000))),
+        ("1인 예산", format_utils.won(settings.get("meal_budget", 12000))),
         ("월 예산 사용률", format_utils.percent(status["usage_rate"])),
     ])

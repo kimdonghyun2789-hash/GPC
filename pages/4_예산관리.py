@@ -30,8 +30,8 @@ st.divider()
 # ------------------------------------------------------------------
 st.subheader("예산 설정")
 with st.form("budget_form"):
-    monthly = st.number_input("월 점심 예산", min_value=0, value=int(status["monthly_budget"]), step=10000)
-    meal = st.number_input("1회 식사 권장 예산", min_value=0, value=int(status["meal_budget"]), step=500)
+    monthly = st.number_input("월 점심 예산 (개인)", min_value=0, value=int(status["monthly_budget"]), step=10000)
+    meal = st.number_input("1인 1회 권장 예산", min_value=0, value=int(status["meal_budget"]), step=500)
     mode_options = ["추천 가능", "감점", "제외"]
     cur_mode = settings.get("budget_mode", "감점")
     mode = st.radio("예산 초과 식당 처리 방식", mode_options,

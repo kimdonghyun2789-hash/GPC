@@ -9,11 +9,15 @@ MML (머물래) 진입점.
     streamlit run app.py
 """
 
+import os
+
 import streamlit as st
 
 from services import db
 from components.sidebar import render_sidebar_header
 from utils.ui import inject_global_css
+
+_ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 # 1) 페이지 설정 (반드시 첫 Streamlit 호출)
 st.set_page_config(
@@ -23,7 +27,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 2) 전역 디자인(폰트/타이포/카드/버튼) 주입
+# 2) 사이드바 최상단(좌측 맨 위)에 브랜드 로고 고정 (네비게이션 위)
+st.logo(
+    os.path.join(_ASSETS, "mml_logo.svg"),
+    icon_image=os.path.join(_ASSETS, "mml_icon.svg"),
+    size="large",
+)
+
+# 3) 전역 디자인(폰트/타이포/카드/버튼) 주입
 inject_global_css()
 
 # 3) DB 자동 생성/초기화 (최초 실행 시 data/mml.db 생성)

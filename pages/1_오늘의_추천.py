@@ -12,12 +12,11 @@ from services import db, recommender, settings as settings_service
 from components.metrics import render_today_summary
 from components.recommendation_group import render_recommendation_group
 from utils import date_utils
-from utils.ui import render_logo
 
 settings = settings_service.get_all()
 today = date_utils.today()
 
-render_logo(width=188)
+st.title("오늘의 추천")
 st.markdown('<div class="page-sub">오늘 점심, 바로 결정하세요 — 1·2·3순위를 한 번에</div>',
             unsafe_allow_html=True)
 render_today_summary(settings)

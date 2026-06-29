@@ -82,7 +82,7 @@ def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
         sep = '<span class="sep">·</span>'
         meta = sep.join([
             f"<span>도보 <b>{int(item.get('walk_minutes') or 0)}분</b></span>",
-            f"<span><b>{format_utils.won(item.get('avg_price'))}</b></span>",
+            f"<span>1인 <b>{format_utils.won(item.get('avg_price'))}</b></span>",
             f"<span>{format_utils.rating(item.get('rating'))}</span>",
             f"<span>혼잡도 {item.get('crowd_level') or '-'}</span>",
             f'<span><span class="mml-bdot" style="background:{bcolor}"></span>{blabel}</span>',
@@ -155,7 +155,7 @@ def _render_visit_form(item, settings, today, visit_key):
     with st.form(key=f"form_visit_{rid}"):
         satisfaction = st.slider("만족도", 1.0, 5.0, 4.0, 0.5)
         actual_price = st.number_input(
-            "실제 결제금액 (미입력 시 평균가격 저장)",
+            "실제 결제금액 (1인 기준 · 미입력 시 평균가격 저장)",
             min_value=0, value=int(item.get("avg_price") or 0), step=500,
         )
         memo = st.text_area("방문 메모", placeholder="예: 맛 괜찮은데 대기가 길었음")

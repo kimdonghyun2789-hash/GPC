@@ -110,7 +110,7 @@ with tab_add:
         map_url = c4.text_input("지도URL", value=editing.get("map_url") if editing else "")
         c5, c6, c7 = st.columns(3)
         walk = c5.number_input("도보시간(분)", min_value=0, value=int(editing["walk_minutes"]) if editing else 5)
-        price = c6.number_input("평균가격", min_value=0, value=int(editing["avg_price"]) if editing else 10000, step=500)
+        price = c6.number_input("평균가격(1인)", min_value=0, value=int(editing["avg_price"]) if editing else 10000, step=500)
         rating = c7.number_input("선호도(0~5)", min_value=0.0, max_value=5.0,
                                  value=float(editing["rating"]) if editing else 3.0, step=0.1)
         c8, c9 = st.columns(2)
