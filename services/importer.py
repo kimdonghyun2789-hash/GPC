@@ -83,6 +83,31 @@ def import_from_naver(base_location: str, keywords=None, display: int = 5) -> di
             "queries": queries,
             "message": f"네이버에서 {total_saved}곳을 수집/갱신했습니다."}
 
+
+def recompute_walk_minutes(base_location: str) -> dict:
+    """
+    기준 위치를 좌표로 변환한 뒤, 좌표가 있는 식당의 도보시간을 직선거리 기반으로 자동 계산한다.
+    네이버 지도(NCP) 키가 필요하다(기준 위치 geocoding).
+    반환: {"ok","updated","message"}
+    """
+    if not naver_map.is_available():
+        return {"ok": False, "updated": 0,
+                "message": "네이버 지도 키(NAVER_MAP_CLIENT_ID/SECRET)가 필요합니다."}
+    geo = naver_map.geocode(base_location)
+    if not geo:
+        return {"ok": False, "updated": 0, "message": "기준 위치 좌표를 찾지 못했습니다."}
+
+    base_lat, base_lng = geo["lat"], geo["lng"]
+    updated = 0
+    for r in db.list_restaurants():
+        if r.get("latitude") and r.get("longitude"):
+            mins = naver_map.estimate_walk_minutes(base_lat, base_lng, r["latitude"], r["longitude"])
+            if mins:
+                db.upsert_restaurant({"name": r["name"], "walk_minutes": mins})
+                updated += 1
+    return {"ok": True, "updated": updated,
+            "message": f"{updated}곳의 도보시간을 좌표 기반으로 자동 계산했습니다."}
+
 # 엑셀 한글 컬럼 -> DB 필드 매핑
 _COLUMN_MAP = {
     "식당명": "name",

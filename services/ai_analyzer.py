@@ -213,6 +213,70 @@ def generate_monthly_report(report_data: dict, settings: dict) -> str | None:
     return ai_client.chat(prompt, settings, system=system, temperature=0.5, max_tokens=600)
 
 
+def suggest_tags(restaurant: dict, memos: list[str], settings: dict) -> list[str] | None:
+    """식당 정보 + 누적 메모로 AI가 태그를 추천한다(PRD Phase 5). 실패 시 None."""
+    if not ai_client.is_available(settings):
+        return None
+    memo_text = " / ".join(m for m in (memos or []) if m) or "(메모 없음)"
+    prompt = (
+        f"식당명: {restaurant.get('name')}\n분류: {restaurant.get('category')}\n"
+        f"대표메뉴: {restaurant.get('main_menu')}\n평균가격(1인): {restaurant.get('avg_price')}\n"
+        f"방문 메모: {memo_text}\n\n"
+        "이 식당에 어울리는 짧은 태그 3~6개를 JSON 배열로만 답해라. "
+        '예: ["가성비","국물","빠른 점심"]'
+    )
+    system = "너는 식당 태그를 다는 도우미다. 설명 없이 JSON 배열만 출력해라."
+    raw = ai_client.chat(prompt, settings, system=system, temperature=0.3, max_tokens=120)
+    parsed = _extract_json_array(raw)
+    return parsed
+
+
+def daily_oneliner(items: list[dict], settings: dict) -> str | None:
+    """오늘의 추천 묶음에 대한 친근한 한 줄 코멘트(PRD Phase 5)."""
+    if not items:
+        return None
+    names = ", ".join(f"{it['rank']}.{it['name']}" for it in items)
+    if not ai_client.is_available(settings):
+        # 비-AI 폴백: 1순위 기반 템플릿
+        top = items[0]
+        return f"오늘은 {top['name']} 어때요? 1·2·3순위로 골라뒀어요."
+    prompt = (
+        f"오늘 점심 추천 후보: {names}\n"
+        "이 추천을 소개하는 친근한 한 줄 코멘트를 한국어로 1문장만 작성해라. 이모지 1개 이내."
+    )
+    system = "너는 친근한 점심 도우미다. 한 문장으로만 답해라."
+    raw = ai_client.chat(prompt, settings, system=system, temperature=0.7, max_tokens=80)
+    return raw.strip() if raw else None
+
+
+def analyze_taste(taste_data: dict, settings: dict) -> str | None:
+    """방문 이력 기반 개인 취향 분석 리포트(PRD Phase 5). AI 없으면 None."""
+    if not ai_client.is_available(settings):
+        return None
+    data_text = json.dumps(taste_data, ensure_ascii=False)
+    prompt = (
+        "아래는 한 사용자의 점심 방문 데이터다. 이 사람의 점심 취향을 3~4문장으로 "
+        "분석하고, 다음에 시도하면 좋을 메뉴를 제안해라.\n" + data_text
+    )
+    system = "너는 식습관 분석 도우미다. 자연스러운 한국어로 답해라."
+    return ai_client.chat(prompt, settings, system=system, temperature=0.5, max_tokens=400)
+
+
+def _extract_json_array(raw: str | None):
+    """문자열에서 JSON 배열을 추출한다(태그 추천용)."""
+    if not raw:
+        return None
+    cleaned = re.sub(r"```(?:json)?", "", raw).strip()
+    m = re.search(r"\[.*\]", cleaned, re.S)
+    if not m:
+        return None
+    try:
+        arr = json.loads(m.group(0))
+        return [str(x).strip() for x in arr if str(x).strip()]
+    except json.JSONDecodeError:
+        return None
+
+
 def _extract_json(raw: str | None):
     """문자열에서 첫 번째 JSON 객체를 추출해 파싱한다(코드블록/잡음 허용)."""
     if not raw:

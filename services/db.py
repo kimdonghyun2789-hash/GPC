@@ -183,6 +183,22 @@ def init_db() -> None:
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id TEXT PRIMARY KEY,
+            preferred_categories TEXT,
+            disliked_categories TEXT,
+            preferred_tags TEXT,
+            disliked_tags TEXT,
+            default_budget INTEGER,
+            repeat_limit_days INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS dislikes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             restaurant_id INTEGER NOT NULL,
@@ -603,6 +619,55 @@ def set_status(restaurant_id: int, status: str) -> None:
     conn.execute(
         "UPDATE restaurants SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         (status, restaurant_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+_PREF_USER = "me"
+_PREF_LISTS = ("preferred_categories", "disliked_categories", "preferred_tags", "disliked_tags")
+
+
+def get_preferences() -> dict:
+    """사용자 선호도(user_preferences)를 dict로 반환한다(없으면 기본값)."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM user_preferences WHERE user_id = ?", (_PREF_USER,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {k: [] for k in _PREF_LISTS} | {"default_budget": None, "repeat_limit_days": None}
+    d = dict(row)
+    result = {}
+    for k in _PREF_LISTS:
+        result[k] = [x.strip() for x in (d.get(k) or "").split(",") if x.strip()]
+    result["default_budget"] = d.get("default_budget")
+    result["repeat_limit_days"] = d.get("repeat_limit_days")
+    return result
+
+
+def save_preferences(prefs: dict) -> None:
+    """사용자 선호도를 저장(upsert)한다."""
+    vals = {k: ", ".join(prefs.get(k, []) or []) for k in _PREF_LISTS}
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO user_preferences
+            (user_id, preferred_categories, disliked_categories, preferred_tags,
+             disliked_tags, default_budget, repeat_limit_days)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            preferred_categories=excluded.preferred_categories,
+            disliked_categories=excluded.disliked_categories,
+            preferred_tags=excluded.preferred_tags,
+            disliked_tags=excluded.disliked_tags,
+            default_budget=excluded.default_budget,
+            repeat_limit_days=excluded.repeat_limit_days,
+            updated_at=CURRENT_TIMESTAMP
+        """,
+        (_PREF_USER, vals["preferred_categories"], vals["disliked_categories"],
+         vals["preferred_tags"], vals["disliked_tags"],
+         prefs.get("default_budget"), prefs.get("repeat_limit_days")),
     )
     conn.commit()
     conn.close()

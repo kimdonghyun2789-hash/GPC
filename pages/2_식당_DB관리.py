@@ -62,6 +62,17 @@ with tab_naver:
             else:
                 st.error(result["message"])
 
+    st.divider()
+    st.markdown("**좌표 기반 도보시간 자동 계산**")
+    st.caption("기준 위치에서 각 식당(좌표 보유)까지의 직선거리로 도보시간을 추정해 갱신합니다.")
+    if st.button("도보시간 자동 계산", disabled=not naver_map.is_available()):
+        loc = settings_service.get("base_location", "") or base_location
+        if not loc:
+            st.error("기준 위치를 먼저 입력/저장해주세요.")
+        else:
+            res = importer.recompute_walk_minutes(loc)
+            (st.success if res["ok"] else st.error)(res["message"])
+
 # ------------------------------------------------------------------
 # 식당 목록
 # ------------------------------------------------------------------
@@ -138,6 +149,28 @@ with tab_add:
                     st.warning("주소를 찾지 못했습니다. 직접 입력해주세요.")
 
     geo = st.session_state.get(geo_key)
+
+    # --- AI 태그 추천 (PRD Phase 5) ---
+    ai_tag_key = f"aitags_{editing['id'] if editing else 'new'}"
+    if editing:
+        with st.expander("🤖 AI 태그 추천"):
+            from services import ai_analyzer, ai_client
+            _settings = settings_service.get_all()
+            if not ai_client.is_available(_settings):
+                st.caption("AI를 켜고 API Key를 등록하면 메뉴/메모를 바탕으로 태그를 추천합니다.")
+            elif st.button("AI로 태그 추천받기", key=f"aibtn_{ai_tag_key}"):
+                memos = [v["memo"] for v in db.list_visit_logs()
+                         if v["restaurant_id"] == editing["id"] and v.get("memo")]
+                with st.spinner("AI가 태그를 분석 중..."):
+                    sugg = ai_analyzer.suggest_tags(editing, memos, _settings)
+                if sugg:
+                    # 기존 태그와 합쳐 저장
+                    merged = list(dict.fromkeys(db.list_tags(editing["id"]) + sugg))
+                    db.set_tags(editing["id"], merged)
+                    st.success("추천 태그: " + ", ".join(sugg) + " (저장됨)")
+                    st.rerun()
+                else:
+                    st.info("태그를 추천하지 못했습니다.")
 
     def _pref(field, default=None):
         """세션 검색결과 > 기존 데이터 > 기본값 순으로 초기값을 고른다."""

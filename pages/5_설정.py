@@ -9,11 +9,38 @@ pages/5_설정.py
 
 import streamlit as st
 
-from services import settings as settings_service, ai_client
+from services import settings as settings_service, ai_client, db
 
 st.title("설정")
 
 s = settings_service.get_all()
+
+# ------------------------------------------------------------------
+# 내 취향 (user_preferences, PRD 5.5)
+# ------------------------------------------------------------------
+st.subheader("내 취향")
+prefs = db.get_preferences()
+categories = sorted({r.get("category") for r in db.list_restaurants() if r.get("category")})
+all_tags = db.all_tag_names()
+with st.form("prefs_form"):
+    p1, p2 = st.columns(2)
+    pref_cats = p1.multiselect("선호 메뉴", categories, default=prefs.get("preferred_categories", []))
+    dis_cats = p2.multiselect("비선호 메뉴", categories, default=prefs.get("disliked_categories", []))
+    t1, t2 = st.columns(2)
+    pref_tags = t1.multiselect("선호 태그", all_tags, default=prefs.get("preferred_tags", []))
+    dis_tags = t2.multiselect("비선호 태그", all_tags, default=prefs.get("disliked_tags", []))
+    prefs_saved = st.form_submit_button("내 취향 저장", type="primary")
+if prefs_saved:
+    db.save_preferences({
+        "preferred_categories": pref_cats, "disliked_categories": dis_cats,
+        "preferred_tags": pref_tags, "disliked_tags": dis_tags,
+        "default_budget": prefs.get("default_budget"),
+        "repeat_limit_days": prefs.get("repeat_limit_days"),
+    })
+    st.success("내 취향을 저장했습니다. 다음 추천부터 반영됩니다.")
+    st.session_state.pop("recommendations", None)
+
+st.divider()
 
 # ------------------------------------------------------------------
 # 추천 조건

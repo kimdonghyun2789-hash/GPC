@@ -195,6 +195,9 @@ h3 {{ font-size: 1.05rem !important; font-weight: 700 !important; color:{INK}; }
     border:1px solid #DDE3EF; border-radius:999px; padding:2px 9px; }}
 .mml-warn {{ display:inline-block; font-size:0.72rem; font-weight:700; color:#B5763F;
     background:#FDF0E6; border:1px solid #F6E0D2; border-radius:999px; padding:1px 9px; margin-left:6px; }}
+
+.mml-oneliner {{ background:#EEF1F8; border:1px solid #DDE3EF; border-radius:12px;
+    padding:9px 13px; margin:0 0 12px; font-size:0.92rem; font-weight:600; color:{GREEN_DARK}; }}
 </style>
 """,
         unsafe_allow_html=True,

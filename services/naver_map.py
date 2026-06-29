@@ -163,6 +163,31 @@ def search_local(query: str, display: int = 5, sort: str = "comment") -> list[di
         return []
 
 
+def haversine_m(lat1, lng1, lat2, lng2) -> float | None:
+    """두 좌표 사이 직선거리(미터)를 계산한다."""
+    try:
+        import math
+        lat1, lng1, lat2, lng2 = (float(lat1), float(lng1), float(lat2), float(lng2))
+    except (TypeError, ValueError):
+        return None
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def estimate_walk_minutes(base_lat, base_lng, lat, lng, speed_m_per_min: float = 75.0) -> int | None:
+    """기준 좌표에서 식당 좌표까지 도보 시간을 추정한다(직선거리/보행속도 + 우회 보정)."""
+    dist = haversine_m(base_lat, base_lng, lat, lng)
+    if dist is None:
+        return None
+    # 실제 경로는 직선보다 길므로 1.3배 우회 보정
+    minutes = (dist * 1.3) / speed_m_per_min
+    return max(1, round(minutes))
+
+
 def map_link(name: str, address: str | None = None) -> str:
     """
     네이버 지도 웹 검색 링크를 만든다(API 키 불필요, 항상 동작).

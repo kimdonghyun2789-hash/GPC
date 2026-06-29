@@ -9,7 +9,7 @@ pages/3_방문기록.py
 import pandas as pd
 import streamlit as st
 
-from services import db, statistics
+from services import db, statistics, ai_analyzer, ai_client, settings as settings_service
 from utils import date_utils, format_utils
 
 st.title("방문 기록")
@@ -31,6 +31,35 @@ c2.metric("이번 달 식비 합계", format_utils.won(month_stat["total"]))
 c3.metric("평균 점심 비용", format_utils.won(month_stat["avg_price"]))
 c4.metric("만족도 평균", format_utils.rating(month_stat["avg_satisfaction"])
           if month_stat["avg_satisfaction"] else "-")
+
+st.divider()
+
+# ------------------------------------------------------------------
+# AI 취향 분석 (PRD Phase 5)
+# ------------------------------------------------------------------
+st.subheader("🤖 내 점심 취향 분석")
+_settings = settings_service.get_all()
+by_cat_all = statistics.visits_by_category()
+if not ai_client.is_available(_settings):
+    # 비-AI 폴백: 가장 많이 먹은 카테고리 요약
+    if by_cat_all:
+        top = ", ".join(f"{c['category']}({c['visits']}회)" for c in by_cat_all[:3])
+        st.caption(f"가장 자주 먹은 메뉴: {top} · (AI를 켜면 더 자세한 취향 분석을 제공합니다.)")
+elif st.button("AI 취향 분석 받기"):
+    by_rest = statistics.visits_by_restaurant()
+    taste_data = {
+        "by_category": by_cat_all,
+        "favorite_restaurants": [
+            {"name": r["name"], "visits": r["visits"], "satisfaction": r["avg_satisfaction"]}
+            for r in by_rest[:5]
+        ],
+    }
+    with st.spinner("AI가 취향을 분석 중..."):
+        report = ai_analyzer.analyze_taste(taste_data, _settings)
+    if report:
+        st.write(report)
+    else:
+        st.info("AI 코멘트를 불러오지 못했습니다.")
 
 st.divider()
 

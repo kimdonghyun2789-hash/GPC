@@ -132,6 +132,19 @@ def _score_restaurant(rest, settings, today, last_visit_map, count_map,
     s_dislike = max(s_dislike, -30.0)  # 과도한 감점 방지
     s_request += s_dislike
 
+    # 사용자 선호 설정 반영 (PRD 5.5)
+    prefs = settings.get("_prefs") or {}
+    cat = rest.get("category")
+    rtags = set(rest.get("tags") or [])
+    if cat and cat in prefs.get("preferred_categories", []):
+        s_request += 8.0
+    if cat and cat in prefs.get("disliked_categories", []):
+        s_request -= 12.0
+    if rtags & set(prefs.get("preferred_tags", [])):
+        s_request += 6.0
+    if rtags & set(prefs.get("disliked_tags", [])):
+        s_request -= 10.0
+
     # 랜덤 점수
     random_weight = settings.get("random_weight", 10)
     s_random = random.uniform(0, random_weight)
@@ -234,6 +247,9 @@ def recommend_lunch(today=None, settings=None, user_request=None,
     today = date_utils.to_date(today)
     if settings is None:
         settings = settings_service.get_all()
+    # 사용자 선호 설정을 점수 계산에서 쓸 수 있게 주입
+    if "_prefs" not in settings:
+        settings = {**settings, "_prefs": db.get_preferences()}
 
     top_n = settings.get("top_n", 3)
     meal_budget = settings.get("meal_budget", 12000)
@@ -315,12 +331,13 @@ def recommend_lunch(today=None, settings=None, user_request=None,
         "message": "추천 후보가 부족하여 일부 조건을 완화했습니다." if relaxed else None,
     }
 
-    # AI 코멘트 (실패해도 기본 결과 유지)
+    # AI 코멘트 + 오늘의 한 줄 코멘트 (실패해도 기본 결과 유지)
     if generate_comments:
         comments = ai_analyzer.generate_ai_recommendation_comments(items, settings, user_request)
         if comments:
             for item in items:
                 item["ai_comment"] = comments.get(item["rank"])
+        result["oneliner"] = ai_analyzer.daily_oneliner(items, settings)
 
     return result
 
