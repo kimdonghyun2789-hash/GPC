@@ -50,6 +50,43 @@ if saved:
 st.divider()
 
 # ------------------------------------------------------------------
+# 지출 분석 (PRD 7.4)
+# ------------------------------------------------------------------
+import pandas as pd  # noqa: E402
+
+st.subheader("📊 이번 달 지출 분석")
+by_cat = statistics.spending_by_category(ym)
+if not by_cat:
+    st.caption("이번 달 방문 기록이 쌓이면 카테고리별 지출과 식당 TOP이 표시됩니다.")
+else:
+    cat_df = pd.DataFrame(by_cat).rename(
+        columns={"category": "카테고리", "total": "지출", "cnt": "횟수"})
+    st.markdown("**카테고리별 지출**")
+    st.bar_chart(cat_df.set_index("카테고리")["지출"])
+
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.markdown("**💸 비싼 식당 TOP 5**")
+        exp = statistics.expensive_restaurants(ym)
+        if exp:
+            st.dataframe(
+                pd.DataFrame([{"식당": e["name"], "평균 결제": e["avg_paid"], "방문": e["cnt"]} for e in exp]),
+                use_container_width=True, hide_index=True)
+        else:
+            st.caption("데이터 없음")
+    with col_r:
+        st.markdown("**💚 가성비 식당 TOP 5**")
+        val = statistics.value_restaurants()
+        if val:
+            st.dataframe(
+                pd.DataFrame([{"식당": v["name"], "가격": v["price"], "만족도": v["satisfaction"]} for v in val]),
+                use_container_width=True, hide_index=True)
+        else:
+            st.caption("만족도 기록이 쌓이면 표시됩니다")
+
+st.divider()
+
+# ------------------------------------------------------------------
 # AI 예산 조언
 # ------------------------------------------------------------------
 st.subheader("🤖 AI 예산 조언")

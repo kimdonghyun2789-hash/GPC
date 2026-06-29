@@ -170,12 +170,24 @@ def init_db() -> None:
             run_date DATE,
             mode TEXT,
             party_size INTEGER,
+            attendees TEXT,
             excluded_categories TEXT,
             result_restaurant_1 INTEGER,
             result_restaurant_2 INTEGER,
             result_restaurant_3 INTEGER,
             selected_restaurant_id INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dislikes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            restaurant_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (restaurant_id) REFERENCES restaurants(id)
         );
         """
     )
@@ -203,9 +215,18 @@ def init_db() -> None:
 
     # 기존 DB 마이그레이션: 누락된 컬럼을 추가한다.
     _migrate_restaurants(cur)
+    _migrate_table(cur, "recommendation_runs", {"attendees": "TEXT"})
 
     conn.commit()
     conn.close()
+
+
+def _migrate_table(cur, table: str, additions: dict) -> None:
+    """주어진 테이블에 누락된 컬럼이 있으면 추가한다(범용 마이그레이션)."""
+    existing = {row["name"] for row in cur.execute(f"PRAGMA table_info({table})").fetchall()}
+    for col, ddl in additions.items():
+        if col not in existing:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl};")
 
 
 def _migrate_restaurants(cur) -> None:
@@ -587,6 +608,36 @@ def set_status(restaurant_id: int, status: str) -> None:
     conn.close()
 
 
+def dislike_restaurant(restaurant_id: int) -> None:
+    """'별로였어요' 피드백을 기록한다(PRD 3.4: 개인 선호도 감점)."""
+    conn = get_connection()
+    conn.execute("INSERT INTO dislikes (restaurant_id) VALUES (?)", (restaurant_id,))
+    conn.commit()
+    conn.close()
+
+
+def dislike_count_map() -> dict[int, int]:
+    """식당별 '별로였어요' 누적 횟수."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT restaurant_id, COUNT(*) AS c FROM dislikes GROUP BY restaurant_id"
+    ).fetchall()
+    conn.close()
+    return {r["restaurant_id"]: r["c"] for r in rows}
+
+
+def disliked_category_counts() -> dict[str, int]:
+    """카테고리별 '별로였어요' 누적 횟수(개인 선호 카테고리 감점용)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT r.category AS category, COUNT(*) AS c "
+        "FROM dislikes d JOIN restaurants r ON r.id = d.restaurant_id "
+        "WHERE r.category IS NOT NULL GROUP BY r.category"
+    ).fetchall()
+    conn.close()
+    return {r["category"]: r["c"] for r in rows}
+
+
 def frequent_full_ids(threshold: int = 3) -> set[int]:
     """방문 불가 사유에 '만석'이 threshold회 이상 누적된 식당 id(자주 만석)."""
     conn = get_connection()
@@ -599,7 +650,7 @@ def frequent_full_ids(threshold: int = 3) -> set[int]:
 
 
 def log_recommendation_run(mode, party_size, excluded_categories,
-                           result_ids, selected_id, run_date=None) -> None:
+                           result_ids, selected_id, run_date=None, attendees=None) -> None:
     """추천/팀 결정 결과를 기록한다(PRD 5.4)."""
     run_date = date_utils.to_date(run_date).isoformat()
     ids = list(result_ids or []) + [None, None, None]
@@ -607,15 +658,32 @@ def log_recommendation_run(mode, party_size, excluded_categories,
     conn.execute(
         """
         INSERT INTO recommendation_runs
-            (run_date, mode, party_size, excluded_categories,
+            (run_date, mode, party_size, attendees, excluded_categories,
              result_restaurant_1, result_restaurant_2, result_restaurant_3, selected_restaurant_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (run_date, mode, party_size, ", ".join(excluded_categories or []),
-         ids[0], ids[1], ids[2], selected_id),
+        (run_date, mode, party_size, ", ".join(attendees or []),
+         ", ".join(excluded_categories or []), ids[0], ids[1], ids[2], selected_id),
     )
     conn.commit()
     conn.close()
+
+
+def team_selection_history(limit: int = 30) -> list[dict]:
+    """팀 점심 결정 이력(선택 식당명/카테고리/날짜/참석자)."""
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT rr.run_date, rr.attendees, r.name AS restaurant_name, r.category AS category
+        FROM recommendation_runs rr
+        JOIN restaurants r ON r.id = rr.selected_restaurant_id
+        WHERE rr.mode = 'team' AND rr.selected_restaurant_id IS NOT NULL
+        ORDER BY rr.id DESC LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def log_api_sync(api_name: str, query: str, response_count: int,

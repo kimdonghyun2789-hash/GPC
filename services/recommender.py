@@ -126,6 +126,12 @@ def _score_restaurant(rest, settings, today, last_visit_map, count_map,
     s_peak = -8.0 if rest.get("is_frequent_full") else 0.0
     s_request += s_peak
 
+    # '별로였어요' 개인 선호 감점 (PRD 3.4): 식당 직접 감점 + 카테고리 약한 감점
+    s_dislike = -8.0 * int(rest.get("dislike_count", 0) or 0) \
+        - 3.0 * int(rest.get("cat_dislike", 0) or 0)
+    s_dislike = max(s_dislike, -30.0)  # 과도한 감점 방지
+    s_request += s_dislike
+
     # 랜덤 점수
     random_weight = settings.get("random_weight", 10)
     s_random = random.uniform(0, random_weight)
@@ -243,12 +249,16 @@ def recommend_lunch(today=None, settings=None, user_request=None,
     count_map = db.visit_count_map()
     sat_map = db.avg_satisfaction_map()
 
-    # 태그/자주만석 정보를 각 식당에 부착
+    # 태그/자주만석/별로였어요 정보를 각 식당에 부착
     tmap = db.tags_map()
     ffull = db.frequent_full_ids()
+    dmap = db.dislike_count_map()
+    cat_dislikes = db.disliked_category_counts()
     for r in all_rest:
         r["tags"] = tmap.get(r["id"], [])
         r["is_frequent_full"] = (r["id"] in ffull) or (r.get("status") == "자주 만석")
+        r["dislike_count"] = dmap.get(r["id"], 0)
+        r["cat_dislike"] = cat_dislikes.get(r.get("category"), 0)
 
     # 자연어 요청 해석(AI 또는 규칙 기반) + 상황별 모드 힌트 병합
     hint = ai_analyzer.parse_natural_request(user_request, settings) if user_request else None

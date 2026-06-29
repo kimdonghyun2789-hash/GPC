@@ -277,8 +277,14 @@ def _render_detail(item, settings):
         with st.expander("추천 점수 구성 보기"):
             st.json(breakdown, expanded=True)
 
-    # --- 한동안 추천 제외(블랙리스트) ---
-    if st.button("🚫 한동안 그만 보기 (30일 추천 제외)", key=f"bl_{item['id']}"):
+    # --- 피드백: 별로였어요 / 한동안 그만 보기 ---
+    fb1, fb2 = st.columns(2)
+    if fb1.button("👎 별로였어요 (선호 감점)", key=f"dislike_{item['id']}", use_container_width=True):
+        db.dislike_restaurant(item["id"])
+        st.session_state.pop("recommendations", None)
+        st.success(f"{item['name']} 피드백을 반영했어요. 다음 추천부터 우선순위가 내려갑니다.")
+        st.rerun()
+    if fb2.button("🚫 한동안 그만 (30일 제외)", key=f"bl_{item['id']}", use_container_width=True):
         db.set_blacklist(item["id"], days=30)
         st.session_state.pop("recommendations", None)
         st.success(f"{item['name']}을(를) 30일간 추천에서 제외했습니다.")

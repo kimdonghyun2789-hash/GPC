@@ -70,6 +70,69 @@ def monthly_spending(year_month: str = None) -> dict:
     }
 
 
+def spending_by_category(year_month: str = None) -> list[dict]:
+    """이번 달 카테고리별 지출 합계(PRD 7.4)."""
+    if year_month is None:
+        year_month = date_utils.year_month()
+    start, end = date_utils.month_range(year_month)
+    conn = db.get_connection()
+    rows = conn.execute(
+        """
+        SELECT COALESCE(r.category, '기타') AS category,
+               COALESCE(SUM(v.actual_price), 0) AS total,
+               COUNT(*) AS cnt
+        FROM visit_logs v JOIN restaurants r ON r.id = v.restaurant_id
+        WHERE v.visited_date BETWEEN ? AND ?
+        GROUP BY r.category ORDER BY total DESC
+        """,
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def expensive_restaurants(year_month: str = None, limit: int = 5) -> list[dict]:
+    """이번 달 평균 결제금액이 높은 식당 TOP N(PRD 7.4)."""
+    if year_month is None:
+        year_month = date_utils.year_month()
+    start, end = date_utils.month_range(year_month)
+    conn = db.get_connection()
+    rows = conn.execute(
+        """
+        SELECT r.name AS name, ROUND(AVG(v.actual_price)) AS avg_paid, COUNT(*) AS cnt
+        FROM visit_logs v JOIN restaurants r ON r.id = v.restaurant_id
+        WHERE v.visited_date BETWEEN ? AND ? AND v.actual_price IS NOT NULL
+        GROUP BY v.restaurant_id ORDER BY avg_paid DESC LIMIT ?
+        """,
+        (start.isoformat(), end.isoformat(), limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def value_restaurants(limit: int = 5) -> list[dict]:
+    """가성비 식당 TOP N: 만족도가 있으면서 (만족도 대비 가격)이 좋은 순(PRD 7.4)."""
+    conn = db.get_connection()
+    rows = conn.execute(
+        """
+        SELECT r.name AS name, r.avg_price AS price,
+               ROUND(AVG(v.satisfaction), 1) AS satisfaction, COUNT(*) AS cnt
+        FROM visit_logs v JOIN restaurants r ON r.id = v.restaurant_id
+        WHERE v.satisfaction IS NOT NULL
+        GROUP BY v.restaurant_id
+        """
+    ).fetchall()
+    conn.close()
+    # 가성비 점수 = 만족도 / (가격/10000)  -> 높을수록 가성비 좋음
+    items = []
+    for r in rows:
+        price = r["price"] or 1
+        score = (r["satisfaction"] or 0) / (price / 10000.0) if price else 0
+        items.append({**dict(r), "value_score": round(score, 2)})
+    items.sort(key=lambda x: x["value_score"], reverse=True)
+    return items[:limit]
+
+
 def build_monthly_report_data(year_month: str = None) -> dict:
     """월별 AI 리포트 생성을 위한 데이터 묶음."""
     if year_month is None:

@@ -30,6 +30,8 @@ categories = sorted({r.get("category") for r in db.list_restaurants() if r.get("
 c1, c2 = st.columns(2)
 attendees = c1.number_input("참석 인원", min_value=2, max_value=30, value=4, step=1)
 exclude = c2.multiselect("오늘 빼고 싶은 메뉴(싫어요)", categories)
+names_raw = st.text_input("팀원 이름 (선택, 쉼표로 구분)", placeholder="예: 동현, 지민, 수아")
+attendee_names = [n.strip() for n in names_raw.split(",") if n.strip()]
 
 if st.button("후보 뽑기", type="primary", use_container_width=True):
     s2 = dict(settings)
@@ -88,12 +90,39 @@ if d3.button("초기화", use_container_width=True):
 winner = st.session_state.get("team_winner")
 if winner:
     st.success(f"🎉 오늘 팀 점심은 **{winner['name']}** 으로 결정!")
-    # 결정 기록
+    # 결정 기록 (참석자 포함)
     db.log_recommendation_run(
         mode="team", party_size=int(attendees), excluded_categories=exclude,
         result_ids=[c["id"] for c in cands], selected_id=winner["id"], run_date=today,
+        attendees=attendee_names,
     )
     if st.button("이 식당 방문으로 저장", type="primary"):
         result = db.save_visit(winner["id"], today, actual_price=winner.get("avg_price"))
         st.session_state.pop("recommendations", None)
         (st.success if result["ok"] else st.warning)(result["message"])
+
+# ------------------------------------------------------------------
+# 팀 선호도 분석 (PRD 3.7)
+# ------------------------------------------------------------------
+st.divider()
+st.subheader("팀 선호도 분석")
+history = db.team_selection_history()
+if not history:
+    st.caption("팀 점심 결정이 쌓이면 자주 고른 식당·메뉴를 분석해 보여줍니다.")
+else:
+    from collections import Counter
+    rest_counter = Counter(h["restaurant_name"] for h in history)
+    cat_counter = Counter(h["category"] for h in history if h["category"])
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("**자주 고른 식당 TOP**")
+        for name, cnt in rest_counter.most_common(5):
+            st.write(f"- {name} · {cnt}회")
+    with col_b:
+        st.markdown("**팀이 선호한 메뉴**")
+        for cat, cnt in cat_counter.most_common(5):
+            st.write(f"- {cat} · {cnt}회")
+    with st.expander("최근 팀 점심 기록"):
+        for h in history[:10]:
+            who = f" ({h['attendees']})" if h.get("attendees") else ""
+            st.write(f"{h['run_date']} · {h['restaurant_name']} [{h.get('category') or '-'}]{who}")
