@@ -1,0 +1,14 @@
+# MML 테마 설정 (로고 컬러: 네이비 + 오렌지)
+# 메인: 네이비 / 강조: 오렌지 / 배경: 밝은 회색 / 카드: 흰색
+[theme]
+primaryColor = "#FC7053"            # 강조(오렌지) - 주요 버튼/포인트
+backgroundColor = "#FFFFFF"          # 본문 배경(흰색)
+secondaryBackgroundColor = "#F4F6F8" # 보조 배경(밝은 회색) - 칩/카드
+textColor = "#1F2A37"                # 본문 글자색
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
