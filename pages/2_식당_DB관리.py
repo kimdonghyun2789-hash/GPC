@@ -9,12 +9,52 @@ pages/2_식당_DB관리.py
 import pandas as pd
 import streamlit as st
 
-from services import db, importer, naver_map
+from services import db, importer, naver_map, settings as settings_service
 from utils import date_utils
 
 st.title("식당 DB 관리")
 
-tab_list, tab_add, tab_upload = st.tabs(["📋 식당 목록", "➕ 추가 / 수정", "📤 엑셀 업로드"])
+tab_list, tab_naver, tab_add, tab_upload = st.tabs(
+    ["📋 식당 목록", "🔎 네이버에서 가져오기", "➕ 추가 / 수정", "📤 엑셀 업로드"]
+)
+
+# ------------------------------------------------------------------
+# 네이버 지역 검색으로 회사 주변 식당 자동 수집 (PRD 3.1)
+# ------------------------------------------------------------------
+with tab_naver:
+    st.markdown(
+        "회사 주소(또는 지역명)를 입력하면 **네이버 지역 검색**으로 주변 식당을 자동으로 "
+        "수집해 DB에 추가합니다. 동일 식당명은 기존 정보를 업데이트합니다."
+    )
+    if not naver_map.is_search_available():
+        st.warning(
+            "네이버 지역 검색 키가 없습니다. `.env`에 "
+            "`NAVER_SEARCH_CLIENT_ID`, `NAVER_SEARCH_CLIENT_SECRET`(네이버 개발자센터 검색 API)를 "
+            "등록하면 자동 수집이 활성화됩니다. 키가 없어도 직접 추가/엑셀 업로드는 가능합니다."
+        )
+
+    base_default = settings_service.get("base_location", "") or ""
+    base_location = st.text_input("기준 위치 (회사 주소 또는 지역명)", value=base_default,
+                                  placeholder="예: 서울 강남구 테헤란로 또는 역삼역")
+    keywords = st.multiselect("검색 키워드", importer.NAVER_SEARCH_KEYWORDS,
+                              default=importer.NAVER_SEARCH_KEYWORDS)
+    display = st.slider("키워드당 가져올 식당 수", 1, 5, 5)
+
+    if st.button("네이버에서 식당 가져오기", type="primary",
+                 disabled=not naver_map.is_search_available()):
+        if not base_location.strip():
+            st.error("기준 위치를 입력해주세요.")
+        else:
+            settings_service.set("base_location", base_location.strip())
+            with st.spinner("네이버에서 주변 식당을 수집 중..."):
+                result = importer.import_from_naver(base_location.strip(), keywords, display)
+            if result["ok"]:
+                st.success(result["message"])
+                cols = st.columns(min(5, len(result["by_keyword"]) or 1))
+                for i, (kw, cnt) in enumerate(result["by_keyword"].items()):
+                    cols[i % len(cols)].metric(kw, f"{cnt}곳")
+            else:
+                st.error(result["message"])
 
 # ------------------------------------------------------------------
 # 식당 목록

@@ -14,6 +14,50 @@ import random
 from services import db, ai_analyzer
 from utils import date_utils, score_utils
 
+# 상황별 추천 모드 (PRD 3.8) -> 추천 힌트로 변환
+RECOMMEND_MODES = {
+    "빠른 점심": {"prefer_short_walk": True, "keywords": ["분식", "국밥", "백반"]},
+    "든든하게": {"keywords": ["한식", "백반", "돈까스", "국밥"]},
+    "가성비": {"prefer_cheap": True},
+    "새로운 곳": {"prefer_new": True},
+    "해장": {"keywords": ["국밥", "해장", "순대"]},
+    "국물": {"keywords": ["국밥", "찌개", "라멘", "쌀국수", "냉면"]},
+    "면": {"keywords": ["라멘", "쌀국수", "냉면", "국수"]},
+    "가까운 곳": {"prefer_short_walk": True},
+    "돈 아끼는 날": {"prefer_cheap": True},
+}
+
+
+def _hint_from_mode(mode: str) -> dict | None:
+    """모드 이름을 추천 힌트 dict로 변환한다."""
+    spec = RECOMMEND_MODES.get(mode)
+    if not spec:
+        return None
+    return {
+        "keywords": list(spec.get("keywords", [])),
+        "prefer_short_walk": spec.get("prefer_short_walk", False),
+        "prefer_cheap": spec.get("prefer_cheap", False),
+        "prefer_new": spec.get("prefer_new", False),
+        "avoid_categories": [],
+        "raw": mode,
+    }
+
+
+def _merge_hints(a: dict | None, b: dict | None) -> dict | None:
+    """두 힌트를 병합한다(자연어 요청 + 모드)."""
+    if not a:
+        return b
+    if not b:
+        return a
+    return {
+        "keywords": list(dict.fromkeys(a.get("keywords", []) + b.get("keywords", []))),
+        "avoid_categories": list(dict.fromkeys(a.get("avoid_categories", []) + b.get("avoid_categories", []))),
+        "prefer_short_walk": a.get("prefer_short_walk") or b.get("prefer_short_walk"),
+        "prefer_cheap": a.get("prefer_cheap") or b.get("prefer_cheap"),
+        "prefer_new": a.get("prefer_new") or b.get("prefer_new"),
+        "raw": " / ".join(x for x in [a.get("raw"), b.get("raw")] if x),
+    }
+
 
 def _passes_hard_filters(rest, today, max_walk, unavailable_ids):
     """완화 불가능한 기본(하드) 필터. 통과하면 True."""
@@ -71,8 +115,10 @@ def _score_restaurant(rest, settings, today, last_visit_map, count_map,
         return None  # 예산 초과 제외
     s_budget *= w["budget"]
 
-    # 자연어 요청 반영 점수
+    # 자연어 요청 반영 점수 (+ 신규 식당 선호 모드)
     s_request = _request_bonus(rest, hint)
+    if hint and hint.get("prefer_new") and last_days is None:
+        s_request += 8.0
 
     # 랜덤 점수
     random_weight = settings.get("random_weight", 10)
@@ -157,7 +203,8 @@ def _build_reasons(rest, last_days, meal_budget, exclude_recent, hint, avg_sat=N
 
 
 def recommend_lunch(today=None, settings=None, user_request=None,
-                    party_size: int = 1, generate_comments: bool = True) -> dict:
+                    party_size: int = 1, mode: str = None,
+                    generate_comments: bool = True) -> dict:
     """
     오늘의 점심 식당을 1·2·3순위로 추천한다.
     반환: {
@@ -188,8 +235,9 @@ def recommend_lunch(today=None, settings=None, user_request=None,
     count_map = db.visit_count_map()
     sat_map = db.avg_satisfaction_map()
 
-    # 자연어 요청 해석(AI 또는 규칙 기반)
+    # 자연어 요청 해석(AI 또는 규칙 기반) + 상황별 모드 힌트 병합
     hint = ai_analyzer.parse_natural_request(user_request, settings) if user_request else None
+    hint = _merge_hints(hint, _hint_from_mode(mode))
 
     # 하드 필터 통과 후보
     base_candidates = [

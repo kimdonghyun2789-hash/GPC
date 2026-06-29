@@ -19,6 +19,7 @@ load_dotenv()
 
 _GEOCODE_URL = "https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode"
 _STATIC_MAP_URL = "https://naveropenapi.apigw.ntruss.com/map-static/v2/raster"
+_LOCAL_SEARCH_URL = "https://openapi.naver.com/v1/search/local.json"
 
 
 def _get(name: str) -> str | None:
@@ -101,6 +102,65 @@ def static_map_bytes(lat, lng, width: int = 360, height: int = 200, level: int =
     except Exception:  # pragma: no cover
         return None
     return None
+
+
+def is_search_available() -> bool:
+    """네이버 지역 검색(Developers Open API) 키가 있는지 여부."""
+    return bool(_get("NAVER_SEARCH_CLIENT_ID") and _get("NAVER_SEARCH_CLIENT_SECRET"))
+
+
+def _strip_tags(text: str) -> str:
+    """검색 결과 제목의 <b></b> 등 태그를 제거한다."""
+    import re
+    return re.sub(r"<[^>]+>", "", text or "").strip()
+
+
+def _to_coord(value) -> float | None:
+    """네이버 지역검색 mapx/mapy(정수, WGS84*1e7)를 경위도(float)로 변환한다."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    # 정수형 좌표는 1e7로 나눠 실제 경위도로 변환
+    if abs(v) > 1000:
+        v = v / 1e7
+    return round(v, 7)
+
+
+def search_local(query: str, display: int = 5, sort: str = "comment") -> list[dict]:
+    """
+    네이버 지역 검색으로 식당 후보를 가져온다.
+    반환: [{"name","category","address","road_address","link","lat","lng"} ...]
+    키가 없거나 실패하면 빈 리스트를 반환한다(기본 기능에 영향 없음).
+    """
+    if not query or not is_search_available():
+        return []
+    try:
+        import requests
+
+        headers = {
+            "X-Naver-Client-Id": _get("NAVER_SEARCH_CLIENT_ID") or "",
+            "X-Naver-Client-Secret": _get("NAVER_SEARCH_CLIENT_SECRET") or "",
+        }
+        params = {"query": query, "display": max(1, min(5, display)), "sort": sort}
+        resp = requests.get(_LOCAL_SEARCH_URL, headers=headers, params=params, timeout=8)
+        if resp.status_code != 200:
+            return []
+        items = resp.json().get("items", [])
+        results = []
+        for it in items:
+            results.append({
+                "name": _strip_tags(it.get("title")),
+                "category": it.get("category"),
+                "address": it.get("address"),
+                "road_address": it.get("roadAddress"),
+                "link": it.get("link"),
+                "lat": _to_coord(it.get("mapy")),
+                "lng": _to_coord(it.get("mapx")),
+            })
+        return results
+    except Exception:  # pragma: no cover - 외부 호출 실패 폴백
+        return []
 
 
 def map_link(name: str, address: str | None = None) -> str:

@@ -35,6 +35,8 @@ DEFAULT_SETTINGS = {
     "ai_use_for_recommendation": "true",
     "ai_use_for_memo_analysis": "true",
     "ai_use_for_budget_advice": "true",
+    # 네이버 지역 검색 기준 위치(회사 주소/지역명)
+    "base_location": "",
     # 점수 가중치 (설정 화면에서 수정 가능)
     "weight_preference": "1.0",
     "weight_distance": "1.0",
@@ -129,6 +131,20 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
+        );
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_sync_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            api_name TEXT,
+            query TEXT,
+            response_count INTEGER,
+            success INTEGER,
+            error_message TEXT,
+            requested_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         """
     )
@@ -469,6 +485,19 @@ def unavailable_restaurant_ids(today=None) -> set[int]:
     ).fetchall()
     conn.close()
     return {r["restaurant_id"] for r in rows}
+
+
+def log_api_sync(api_name: str, query: str, response_count: int,
+                 success: bool, error_message: str = None) -> None:
+    """네이버 API 수집 로그를 남긴다(PRD 5.6)."""
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO api_sync_logs (api_name, query, response_count, success, error_message) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (api_name, query, response_count, 1 if success else 0, error_message),
+    )
+    conn.commit()
+    conn.close()
 
 
 def clear_unavailable_today(today=None) -> None:

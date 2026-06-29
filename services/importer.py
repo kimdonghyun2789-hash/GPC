@@ -10,7 +10,78 @@ from __future__ import annotations
 
 import pandas as pd
 
-from services import db
+from services import db, naver_map
+
+# 네이버 지역 검색에 사용할 기본 키워드 (PRD 3.1)
+NAVER_SEARCH_KEYWORDS = [
+    "한식", "중식", "일식", "양식", "분식",
+    "국밥", "돈까스", "냉면", "샐러드", "백반",
+]
+
+# 네이버 카테고리 문자열 -> 앱 내부 분류 매핑
+_CATEGORY_BUCKETS = {
+    "한식": "한식", "국밥": "한식", "백반": "한식", "냉면": "한식", "찌개": "한식",
+    "중식": "중식", "일식": "일식", "돈까스": "일식", "라멘": "일식", "초밥": "일식",
+    "양식": "양식", "이탈리아": "양식", "파스타": "양식",
+    "분식": "분식", "샐러드": "샐러드", "아시아": "아시안", "베트남": "아시안",
+    "카페": "카페", "디저트": "카페",
+}
+
+
+def _bucket_category(naver_category: str, fallback: str) -> str:
+    """네이버 카테고리 문자열을 앱 내부 분류로 단순화한다."""
+    text = naver_category or ""
+    for key, bucket in _CATEGORY_BUCKETS.items():
+        if key in text:
+            return bucket
+    return fallback
+
+
+def import_from_naver(base_location: str, keywords=None, display: int = 5) -> dict:
+    """
+    네이버 지역 검색으로 기준 위치 주변 식당을 수집해 DB에 upsert한다(PRD 3.1).
+    동일 식당명은 기존 데이터를 업데이트(병합)한다.
+    반환: {"ok","saved","by_keyword","queries","message"}
+    """
+    if not naver_map.is_search_available():
+        return {"ok": False, "saved": 0, "by_keyword": {}, "queries": 0,
+                "message": "네이버 지역 검색 키(NAVER_SEARCH_CLIENT_ID/SECRET)가 없습니다."}
+    if not base_location:
+        return {"ok": False, "saved": 0, "by_keyword": {}, "queries": 0,
+                "message": "기준 위치(회사 주소 또는 지역명)를 입력해주세요."}
+
+    keywords = keywords or NAVER_SEARCH_KEYWORDS
+    by_keyword: dict[str, int] = {}
+    seen_names: set[str] = set()
+    total_saved = 0
+    queries = 0
+
+    for kw in keywords:
+        query = f"{base_location} {kw}"
+        items = naver_map.search_local(query, display=display)
+        queries += 1
+        saved_for_kw = 0
+        for it in items:
+            name = it.get("name")
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            db.upsert_restaurant({
+                "name": name,
+                "category": _bucket_category(it.get("category"), kw),
+                "address": it.get("road_address") or it.get("address"),
+                "latitude": it.get("lat"),
+                "longitude": it.get("lng"),
+                "map_url": it.get("link"),
+            })
+            saved_for_kw += 1
+            total_saved += 1
+        by_keyword[kw] = saved_for_kw
+        db.log_api_sync("local_search", query, len(items), True)
+
+    return {"ok": True, "saved": total_saved, "by_keyword": by_keyword,
+            "queries": queries,
+            "message": f"네이버에서 {total_saved}곳을 수집/갱신했습니다."}
 
 # 엑셀 한글 컬럼 -> DB 필드 매핑
 _COLUMN_MAP = {

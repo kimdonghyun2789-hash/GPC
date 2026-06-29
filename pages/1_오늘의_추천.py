@@ -32,6 +32,17 @@ if db.count_restaurants() == 0:
         st.rerun()
     st.stop()
 
+# 상황별 추천 모드 (PRD 3.8)
+st.markdown('<div class="sec-title">오늘은 어떤 점심?</div>', unsafe_allow_html=True)
+mode_options = list(recommender.RECOMMEND_MODES.keys())
+if hasattr(st, "pills"):
+    mode = st.pills("모드", mode_options, selection_mode="single",
+                    key="mode_pills", label_visibility="collapsed")
+else:  # 구버전 폴백
+    mode = st.radio("모드", ["(선택 안 함)"] + mode_options, horizontal=True,
+                    label_visibility="collapsed")
+    mode = None if mode == "(선택 안 함)" else mode
+
 # 자연어 요청 + 인원 입력
 st.markdown('<div class="sec-title">오늘 뭐 먹고 싶어?</div>', unsafe_allow_html=True)
 req_col, party_col = st.columns([0.74, 0.26])
@@ -58,6 +69,7 @@ if recommend_clicked or reset_clicked:
             today=today, settings=settings,
             user_request=user_request or None,
             party_size=int(party_size),
+            mode=mode,
         )
     st.session_state["recommendations"] = result
 
