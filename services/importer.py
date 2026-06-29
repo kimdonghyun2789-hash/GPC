@@ -8,9 +8,12 @@ services/importer.py
 
 from __future__ import annotations
 
+import io
+
 import pandas as pd
 
 from services import db, naver_map
+from utils import date_utils
 
 # 네이버 지역 검색에 사용할 기본 키워드 (PRD 3.1)
 NAVER_SEARCH_KEYWORDS = [
@@ -188,6 +191,87 @@ def import_from_excel(file) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "inserted": 0, "message": f"엑셀을 읽지 못했습니다: {e}"}
     return import_from_dataframe(df)
+
+
+def _parse_pasted(text: str) -> pd.DataFrame:
+    """엑셀/시트에서 복사한 텍스트(탭/콤마 구분)를 DataFrame으로 파싱한다."""
+    # sep=None + engine='python' 이면 구분자(탭/콤마)를 자동 추론한다.
+    return pd.read_csv(io.StringIO(text.strip()), sep=None, engine="python")
+
+
+def import_from_pasted_text(text: str) -> dict:
+    """엑셀/구글시트에서 복사해 붙여넣은 식당 표를 import한다(첫 줄=헤더)."""
+    if not text or not text.strip():
+        return {"ok": False, "inserted": 0, "message": "붙여넣은 내용이 없습니다."}
+    try:
+        df = _parse_pasted(text)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "inserted": 0, "message": f"표를 인식하지 못했습니다: {e}"}
+    return import_from_dataframe(df)
+
+
+# 방문 기록 붙여넣기용 컬럼 매핑
+_VISIT_COLMAP = {
+    "식당명": "name", "방문일": "date", "날짜": "date",
+    "금액": "price", "실제결제금액": "price", "결제금액": "price",
+    "만족도": "satisfaction", "별점": "satisfaction", "메모": "memo",
+}
+
+
+def import_visits_from_dataframe(df: pd.DataFrame) -> dict:
+    """
+    방문 기록 표를 import한다. 필수 컬럼: 식당명, 방문일.
+    식당이 없으면 이름만으로 자동 생성한 뒤 방문을 저장한다.
+    """
+    cols = {c: _VISIT_COLMAP[c] for c in df.columns if c in _VISIT_COLMAP}
+    if "name" not in cols.values() or "date" not in cols.values():
+        return {"ok": False, "inserted": 0,
+                "message": "필수 컬럼이 없습니다: 식당명, 방문일"}
+
+    name_to_id = {r["name"]: r["id"] for r in db.list_restaurants()}
+    saved = dup = created = 0
+    for _, row in df.iterrows():
+        rec = {field: row[col] for col, field in cols.items()}
+        name = str(rec.get("name") or "").strip()
+        if not name or pd.isna(rec.get("date")):
+            continue
+        rid = name_to_id.get(name)
+        if rid is None:  # 없는 식당은 이름만으로 생성
+            rid = db.upsert_restaurant({"name": name})
+            name_to_id[name] = rid
+            created += 1
+        price = rec.get("price")
+        sat = rec.get("satisfaction")
+        memo = rec.get("memo")
+        result = db.save_visit(
+            restaurant_id=rid,
+            visited_date=date_utils.to_date(rec["date"]),
+            satisfaction=float(sat) if sat is not None and not pd.isna(sat) else None,
+            actual_price=int(float(price)) if price is not None and not pd.isna(price) else None,
+            memo=str(memo) if memo is not None and not pd.isna(memo) else None,
+        )
+        if result["ok"]:
+            saved += 1
+        else:
+            dup += 1
+
+    msg = f"방문 기록 {saved}건 저장"
+    if created:
+        msg += f" · 신규 식당 {created}곳 생성"
+    if dup:
+        msg += f" · 중복 {dup}건 건너뜀"
+    return {"ok": True, "inserted": saved, "message": msg}
+
+
+def import_visits_from_text(text: str) -> dict:
+    """붙여넣은 방문 기록 표를 import한다."""
+    if not text or not text.strip():
+        return {"ok": False, "inserted": 0, "message": "붙여넣은 내용이 없습니다."}
+    try:
+        df = _parse_pasted(text)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "inserted": 0, "message": f"표를 인식하지 못했습니다: {e}"}
+    return import_visits_from_dataframe(df)
 
 
 # PRD 22. 샘플 데이터

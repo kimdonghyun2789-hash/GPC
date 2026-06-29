@@ -8,7 +8,7 @@ pages/3_방문기록.py
 import pandas as pd
 import streamlit as st
 
-from services import db, statistics, ai_analyzer, ai_client, settings as settings_service
+from services import db, statistics, ai_analyzer, ai_client, importer, settings as settings_service
 from components.budget_view import render_budget
 from utils import date_utils, format_utils
 from utils.ui import page_header
@@ -21,6 +21,20 @@ tab_visit, tab_budget = st.tabs(["📒 방문 기록", "💰 예산"])
 # 방문 기록 탭
 # ==================================================================
 with tab_visit:
+    # 붙여넣기로 과거 방문 기록 대량 등록
+    with st.expander("📋 붙여넣기로 방문 기록 가져오기"):
+        st.caption("엑셀/시트에서 **헤더 포함** 복사해 붙여넣으세요. 필수: 식당명, 방문일 · 선택: 금액, 만족도, 메모")
+        v_text = st.text_area(
+            "방문 기록 붙여넣기", height=130,
+            placeholder="식당명\t방문일\t금액\t만족도\t메모\n김치찌개집\t2026-06-20\t9000\t4.5\t맛있었음",
+        )
+        if st.button("방문 기록 반영", key="paste_visits"):
+            res = importer.import_visits_from_text(v_text)
+            (st.success if res["ok"] else st.error)(res["message"])
+            if res["ok"]:
+                st.session_state.pop("recommendations", None)
+                st.rerun()
+
     logs = db.list_visit_logs()
     if not logs:
         st.info("아직 방문 기록이 없습니다. '오늘의 점심'에서 [여기로 방문]으로 기록을 남겨보세요.")

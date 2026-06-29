@@ -22,7 +22,7 @@ TAG_SUGGESTIONS = [
 page_header("식당 DB 관리", "네이버 자동 수집·직접 추가·엑셀 업로드로 회사 주변 식당을 관리하세요")
 
 tab_list, tab_naver, tab_add, tab_upload = st.tabs(
-    ["📋 식당 목록", "🔎 네이버에서 가져오기", "➕ 추가 / 수정", "📤 엑셀 업로드"]
+    ["📋 식당 목록", "🔎 네이버에서 가져오기", "➕ 추가 / 수정", "📤 엑셀 · 붙여넣기"]
 )
 
 # ------------------------------------------------------------------
@@ -259,10 +259,19 @@ with tab_upload:
     if uploaded is not None:
         if st.button("업로드 반영", type="primary"):
             result = importer.import_from_excel(uploaded)
-            if result["ok"]:
-                st.success(result["message"])
-            else:
-                st.error(result["message"])
+            (st.success if result["ok"] else st.error)(result["message"])
+
+    # 붙여넣기로 추가 (엑셀/구글시트에서 헤더 포함 복사 → 붙여넣기)
+    st.divider()
+    st.markdown("##### 또는 붙여넣기로 추가")
+    st.caption("엑셀/구글시트에서 **헤더 행 포함**해 복사한 뒤 아래에 붙여넣으세요. (탭 또는 콤마 구분 자동 인식)")
+    paste_text = st.text_area(
+        "식당 표 붙여넣기", height=140,
+        placeholder="식당명\t메뉴분류\t대표메뉴\t도보시간\t평균가격\n김치찌개집\t한식\t김치찌개\t5\t9000",
+    )
+    if st.button("붙여넣기 반영", key="paste_rest"):
+        result = importer.import_from_pasted_text(paste_text)
+        (st.success if result["ok"] else st.error)(result["message"])
 
     # 양식 다운로드용 샘플 DataFrame
     st.divider()
