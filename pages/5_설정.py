@@ -10,8 +10,9 @@ pages/5_설정.py
 import streamlit as st
 
 from services import settings as settings_service, ai_client, db
+from utils.ui import page_header
 
-st.title("설정")
+page_header("설정", "내 취향·추천 조건·AI·네이버 연동을 설정하세요")
 
 s = settings_service.get_all()
 

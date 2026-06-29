@@ -11,6 +11,7 @@ import streamlit as st
 
 from services import db, importer, naver_map, settings as settings_service
 from utils import date_utils
+from utils.ui import page_header
 
 # 태그 추천 목록 (PRD 3.2)
 TAG_SUGGESTIONS = [
@@ -18,7 +19,7 @@ TAG_SUGGESTIONS = [
     "해장", "깔끔", "매움", "국물", "면", "밥", "신규 방문", "자주 감", "주차 가능",
 ]
 
-st.title("식당 DB 관리")
+page_header("식당 DB 관리", "네이버 자동 수집·직접 추가·엑셀 업로드로 회사 주변 식당을 관리하세요")
 
 tab_list, tab_naver, tab_add, tab_upload = st.tabs(
     ["📋 식당 목록", "🔎 네이버에서 가져오기", "➕ 추가 / 수정", "📤 엑셀 업로드"]

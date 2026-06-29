@@ -72,6 +72,18 @@ def render_logo(width: int = 184, with_tagline: bool = True) -> None:
 # ------------------------------------------------------------------
 # 요약 칩
 # ------------------------------------------------------------------
+def page_header(title: str, subtitle: str | None = None) -> None:
+    """모든 페이지에서 일관된 헤더(제목 + 부제)를 렌더링한다."""
+    st.markdown(f'<div class="mml-ph">{title}</div>', unsafe_allow_html=True)
+    if subtitle:
+        st.markdown(f'<div class="page-sub">{subtitle}</div>', unsafe_allow_html=True)
+
+
+def section(title: str) -> None:
+    """오렌지 액센트가 있는 섹션 제목."""
+    st.markdown(f'<div class="sec-title">{title}</div>', unsafe_allow_html=True)
+
+
 def summary_chips(items: list[tuple[str, str]]) -> None:
     """(라벨, 값) 리스트를 잘리지 않는 칩 묶음으로 렌더링한다."""
     chips = "".join(
@@ -114,10 +126,17 @@ h2 {{ font-size: 1.22rem !important; font-weight: 800 !important; color:{INK}; }
 h3 {{ font-size: 1.05rem !important; font-weight: 700 !important; color:{INK}; }}
 .stApp p, .stApp li {{ font-size: 0.94rem; }}
 .block-container {{ padding-top: 2rem; max-width: 800px; }}
-.page-sub {{ color:{MUTE}; font-size:0.92rem; margin:-2px 0 10px; }}
-.sec-title {{ font-size:1.05rem; font-weight:800; color:{INK}; margin:2px 0 8px;
+.mml-ph {{ font-size:1.5rem; font-weight:800; color:{INK}; margin:0 0 1px;
+           display:flex; align-items:center; gap:9px; }}
+.mml-ph:before {{ content:""; width:5px; height:22px; border-radius:3px; background:{ORANGE}; }}
+.page-sub {{ color:{MUTE}; font-size:0.92rem; margin:2px 0 12px; padding-left:14px; }}
+.sec-title {{ font-size:1.02rem; font-weight:800; color:{INK}; margin:2px 0 8px;
               display:flex; align-items:center; gap:8px; }}
-.sec-title:before {{ content:""; width:4px; height:16px; border-radius:3px; background:{ORANGE}; }}
+.sec-title:before {{ content:""; width:4px; height:15px; border-radius:3px; background:{ORANGE}; }}
+
+/* 구분선을 가볍게 */
+hr {{ margin:1.1rem 0 !important; border-color:#EEF1F4 !important; }}
+[data-testid="stHeadingWithActionElements"] h2 {{ margin-top:0.2rem; }}
 
 /* metric 보정 */
 [data-testid="stMetricValue"] {{ font-size:1.35rem !important; font-weight:700 !important; }}

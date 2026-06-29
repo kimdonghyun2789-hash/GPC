@@ -11,8 +11,9 @@ import streamlit as st
 from services import budget, settings as settings_service, ai_analyzer, statistics, ai_client
 from components.budget_card import render_budget_dashboard
 from utils import date_utils
+from utils.ui import page_header
 
-st.title("예산 관리")
+page_header("예산 관리", "개인 점심 예산과 지출을 관리하세요")
 
 settings = settings_service.get_all()
 ym = date_utils.year_month()

@@ -13,10 +13,9 @@ import streamlit as st
 
 from services import db, recommender, settings as settings_service
 from utils import date_utils, format_utils
+from utils.ui import page_header
 
-st.title("팀 점심")
-st.markdown('<div class="page-sub">여럿이 모였을 때 — 투표로 빠르게 오늘 점심을 정하세요</div>',
-            unsafe_allow_html=True)
+page_header("팀 점심 투표", "여럿이 모였을 때 — 후보를 뽑고 투표로 빠르게 정하세요")
 
 settings = settings_service.get_all()
 today = date_utils.today()

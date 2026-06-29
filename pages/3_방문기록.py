@@ -11,8 +11,9 @@ import streamlit as st
 
 from services import db, statistics, ai_analyzer, ai_client, settings as settings_service
 from utils import date_utils, format_utils
+from utils.ui import page_header
 
-st.title("방문 기록")
+page_header("방문 기록", "방문 내역·통계·취향을 한눈에")
 
 logs = db.list_visit_logs()
 
