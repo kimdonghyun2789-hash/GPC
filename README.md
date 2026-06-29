@@ -22,6 +22,12 @@
 
 ## 🚀 실행 방법
 
+### Windows (가장 간단)
+
+`run.bat` 파일을 **더블클릭**하세요. 최초 1회만 가상환경(`.venv`) 생성과 패키지 설치를 자동으로 진행하고, 이후에는 바로 앱이 실행되며 브라우저가 자동으로 열립니다.
+
+### 직접 실행 (Windows / macOS / Linux 공통)
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
