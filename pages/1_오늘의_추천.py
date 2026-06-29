@@ -12,11 +12,13 @@ from services import db, recommender, settings as settings_service
 from components.metrics import render_today_summary
 from components.recommendation_group import render_recommendation_group
 from utils import date_utils
+from utils.ui import render_logo
 
 settings = settings_service.get_all()
 today = date_utils.today()
 
-st.title("MML · 오늘의 추천")
+render_logo(width=200)
+st.markdown("#### 오늘의 추천")
 render_today_summary(settings)
 st.divider()
 

@@ -28,34 +28,44 @@ def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
     meal_budget = settings.get("meal_budget", 12000)
 
     with st.container(border=True):
-        # 헤더: 순위 + 식당명 + 점수
-        c1, c2 = st.columns([0.75, 0.25])
-        with c1:
-            st.markdown(f"### {rank}순위. {item['name']}")
-            st.caption(f"{item.get('category') or '-'} · {item.get('main_menu') or '-'}")
-        with c2:
-            st.metric("추천점수", item.get("score", 0))
+        # 헤더: 순위 배지 + 식당명 + 점수
+        rank_cls = f"r{rank}" if isinstance(rank, int) and rank in (1, 2, 3) else "r3"
+        st.markdown(
+            f"""<div class="mml-card-head">
+  <div class="mml-rank {rank_cls}">{rank}</div>
+  <div class="mml-card-title">
+    <div class="name">{item['name']}</div>
+    <div class="sub">{item.get('category') or '-'} · {item.get('main_menu') or '-'}</div>
+  </div>
+  <div class="mml-score"><span class="s">{item.get('score', 0)}</span><span class="l">추천점수</span></div>
+</div>""",
+            unsafe_allow_html=True,
+        )
 
         # 정보 라인
         budget_text = format_utils.budget_status_text(item.get("avg_price"), meal_budget)
         last = item.get("last_visited") or "방문 이력 없음"
+        d = '<span class="dot">·</span>'
         st.markdown(
-            f"{format_utils.walk(item.get('walk_minutes'))} · "
-            f"{format_utils.won(item.get('avg_price'))} · "
-            f"{format_utils.rating(item.get('rating'))} · "
-            f"혼잡도 {item.get('crowd_level') or '-'} · "
-            f"{budget_text}"
+            f'<div class="mml-info">{format_utils.walk(item.get("walk_minutes"))}{d}'
+            f'{format_utils.won(item.get("avg_price"))}{d}'
+            f'{format_utils.rating(item.get("rating"))}{d}'
+            f'혼잡도 {item.get("crowd_level") or "-"}{d}'
+            f'{budget_text}</div>'
+            f'<div class="mml-info" style="color:#9AA3AF;font-size:0.8rem;">'
+            f'최근방문일 {last}{d}누적 방문 {item.get("visit_count", 0)}회</div>',
+            unsafe_allow_html=True,
         )
-        st.caption(f"최근방문일: {last} · 누적 방문 {item.get('visit_count', 0)}회")
 
-        # 추천 사유
+        # 추천 사유 (배지)
         reasons = item.get("reasons") or []
         if reasons:
-            st.markdown("**추천 사유:** " + " / ".join(reasons))
+            badges = "".join(f'<span class="mml-reason">{r}</span>' for r in reasons)
+            st.markdown(f'<div style="margin:4px 0 2px;">{badges}</div>', unsafe_allow_html=True)
 
         # AI 코멘트
         if item.get("ai_comment"):
-            st.info(f"🤖 AI 코멘트: {item['ai_comment']}")
+            st.info(f"🤖 {item['ai_comment']}")
 
         # 버튼 3종
         b1, b2, b3 = st.columns(3)

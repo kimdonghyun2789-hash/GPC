@@ -13,6 +13,7 @@ import streamlit as st
 
 from services import db
 from components.sidebar import render_sidebar_header
+from utils.ui import inject_global_css
 
 # 1) 페이지 설정 (반드시 첫 Streamlit 호출)
 st.set_page_config(
@@ -22,10 +23,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 2) DB 자동 생성/초기화 (최초 실행 시 data/mml.db 생성)
+# 2) 전역 디자인(폰트/타이포/카드/버튼) 주입
+inject_global_css()
+
+# 3) DB 자동 생성/초기화 (최초 실행 시 data/mml.db 생성)
 db.init_db()
 
-# 3) 사이드바 브랜딩 + AI 상태
+# 4) 사이드바 브랜딩 + AI 상태
 render_sidebar_header()
 
 # 4) 멀티페이지 네비게이션
