@@ -1,0 +1,15 @@
+# MML
+# 런타임에 자동 생성되는 DB
+data/mml.db
+data/*.db-journal
+
+# 환경변수 / 시크릿
+.env
+.streamlit/secrets.toml
+
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store

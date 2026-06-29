@@ -1,0 +1,13 @@
+# MML (머물래) - 의존성 목록
+# pip install -r requirements.txt 로 설치한다.
+
+streamlit>=1.31.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+python-dotenv>=1.0.0
+
+# AI API는 선택 기능이다. 사용할 Provider 패키지만 설치하면 된다.
+# (없어도 기본 추천 기능은 정상 동작한다.)
+openai>=1.0.0
+google-generativeai>=0.5.0
+anthropic>=0.25.0
