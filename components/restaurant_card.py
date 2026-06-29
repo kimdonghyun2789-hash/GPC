@@ -45,6 +45,9 @@ def _headline_reason(item: dict, meal_budget: int) -> str:
     crowd = item.get("crowd_level")
 
     points: list[str] = []
+    avg_sat = item.get("avg_satisfaction")
+    if avg_sat is not None and avg_sat >= 4.0:
+        points.append(f"내가 만족했던 곳이에요 (★{avg_sat:.1f})")
     if walk <= 4:
         points.append(f"회사에서 가까운 편이에요 (도보 {int(walk)}분)")
     if rating >= 4.2:
@@ -70,7 +73,7 @@ def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
     rank = item.get("rank", "-")
     meal_budget = settings.get("meal_budget", 12000)
 
-    with st.container(border=False):
+    with st.container(border=True):
         rank_cls = f"r{rank}" if isinstance(rank, int) and rank in (1, 2, 3) else "r3"
         band_cls, band_label = match_meta(item.get("match", 70))
 
@@ -104,26 +107,27 @@ def render_recommendation_card(item: dict, settings: dict, today=None) -> None:
 
         ribbon = '<div class="mml-ribbon">오늘의 1순위 추천</div>' if rank == 1 else ""
 
+        # 상단 띠(헤더): 순위 배지 + 이름 + 매칭. 카드 가장자리까지 채운다.
         st.markdown(
-            f"""<div class="mml-card {rank_cls}">
+            f"""<div class="mml-head {rank_cls}">
   {ribbon}
-  <div class="mml-chead">
+  <div class="mml-headrow">
     <div class="mml-rk">{rank}</div>
-    <div>
+    <div class="mml-titlewrap">
       <div class="mml-name">{item['name']}</div>
       <div class="mml-sub">{item.get('category') or '-'} · {item.get('main_menu') or '-'}</div>
     </div>
     <div class="mml-match {band_cls}"><div class="p">{item.get('match', '-')}%</div><div class="l">{band_label}</div></div>
   </div>
-  <div class="mml-meta">{meta}</div>
-  <div class="mml-why">{why}</div>
-  <div class="mml-sublog">{sublog}</div>
-</div>""",
+</div>
+<div class="mml-meta">{meta}</div>
+<div class="mml-why">{why}</div>
+<div class="mml-sublog">{sublog}</div>""",
             unsafe_allow_html=True,
         )
 
-        # 버튼 3종
-        b1, b2, b3 = st.columns(3)
+        # 버튼 3종 (카드 안에서 한 줄로)
+        b1, b2, b3 = st.columns(3, gap="small")
         visit_key = f"visit_form_{rid}"
         unavail_key = f"unavail_form_{rid}"
         detail_key = f"detail_{rid}"
@@ -256,6 +260,13 @@ def _render_detail(item, settings):
     if breakdown:
         with st.expander("추천 점수 구성 보기"):
             st.json(breakdown, expanded=True)
+
+    # --- 한동안 추천 제외(블랙리스트) ---
+    if st.button("🚫 한동안 그만 보기 (30일 추천 제외)", key=f"bl_{item['id']}"):
+        db.set_blacklist(item["id"], days=30)
+        st.session_state.pop("recommendations", None)
+        st.success(f"{item['name']}을(를) 30일간 추천에서 제외했습니다.")
+        st.rerun()
 
     # 누적 메모 기반 AI 요약
     logs = [v for v in db.list_visit_logs() if v["restaurant_id"] == item["id"] and v.get("memo")]

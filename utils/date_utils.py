@@ -84,6 +84,18 @@ def remaining_workdays(d=None) -> int:
     return count
 
 
+def workdays_elapsed(d=None) -> int:
+    """해당 날짜가 속한 달에서 1일부터 오늘(포함)까지의 평일 수."""
+    d = to_date(d)
+    count = 0
+    cur = date(d.year, d.month, 1)
+    while cur <= d:
+        if cur.weekday() < 5:
+            count += 1
+        cur += timedelta(days=1)
+    return count
+
+
 def month_range(year_month_str: str):
     """'YYYY-MM' 문자열을 받아 (월 첫날, 월 마지막날) date 튜플을 반환한다."""
     y, m = (int(x) for x in year_month_str.split("-"))

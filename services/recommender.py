@@ -32,7 +32,7 @@ def _passes_hard_filters(rest, today, max_walk, unavailable_ids):
 
 
 def _score_restaurant(rest, settings, today, last_visit_map, count_map,
-                      meal_budget, budget_mode, hint, relax_level):
+                      meal_budget, budget_mode, hint, relax_level, sat_map=None):
     """
     단일 식당의 최종 점수와 사유를 계산한다.
     예산 '제외' 모드에서 초과 식당은 None을 반환(후보 제외).
@@ -59,6 +59,8 @@ def _score_restaurant(rest, settings, today, last_visit_map, count_map,
     s_crowd = score_utils.crowd_score(rest.get("crowd_level")) * w["crowd"]
     s_recency = score_utils.recency_score(last_days, exclude_recent)
     s_visits = score_utils.visit_count_score(count_map.get(rest["id"], 0))
+    avg_sat = (sat_map or {}).get(rest["id"])
+    s_satisfaction = score_utils.satisfaction_score(avg_sat)
 
     # 예산 점수 (relax_level>=5면 '제외'를 '감점'으로 완화)
     effective_mode = budget_mode
@@ -77,15 +79,17 @@ def _score_restaurant(rest, settings, today, last_visit_map, count_map,
     s_random = random.uniform(0, random_weight)
 
     total = round(
-        s_pref + s_dist + s_price + s_crowd + s_recency + s_visits + s_budget + s_request + s_random,
+        s_pref + s_dist + s_price + s_crowd + s_recency + s_visits
+        + s_satisfaction + s_budget + s_request + s_random,
         2,
     )
 
-    reasons = _build_reasons(rest, last_days, meal_budget, exclude_recent, hint)
+    reasons = _build_reasons(rest, last_days, meal_budget, exclude_recent, hint, avg_sat)
     breakdown = {
         "선호도": round(s_pref, 1), "거리": round(s_dist, 1), "가격": round(s_price, 1),
         "혼잡도": round(s_crowd, 1), "예산": round(s_budget, 1), "최근미방문": round(s_recency, 1),
-        "방문횟수": round(s_visits, 1), "요청반영": round(s_request, 1), "랜덤": round(s_random, 1),
+        "방문횟수": round(s_visits, 1), "내만족도": round(s_satisfaction, 1),
+        "요청반영": round(s_request, 1), "랜덤": round(s_random, 1),
     }
     return total, reasons, breakdown
 
@@ -119,9 +123,11 @@ def _request_bonus(rest, hint) -> float:
     return bonus
 
 
-def _build_reasons(rest, last_days, meal_budget, exclude_recent, hint) -> list[str]:
+def _build_reasons(rest, last_days, meal_budget, exclude_recent, hint, avg_sat=None) -> list[str]:
     """추천 사유 문구 리스트를 만든다."""
     reasons = []
+    if avg_sat is not None and avg_sat >= 4.0:
+        reasons.append(f"내 만족도가 높았던 곳 (★{avg_sat:.1f})")
     if last_days is None:
         reasons.append("방문 이력이 없는 새로운 식당")
     elif last_days > exclude_recent:
@@ -180,6 +186,7 @@ def recommend_lunch(today=None, settings=None, user_request=None,
     unavailable_ids = db.unavailable_restaurant_ids(today)
     last_visit_map = db.last_visited_date_map()
     count_map = db.visit_count_map()
+    sat_map = db.avg_satisfaction_map()
 
     # 자연어 요청 해석(AI 또는 규칙 기반)
     hint = ai_analyzer.parse_natural_request(user_request, settings) if user_request else None
@@ -197,7 +204,7 @@ def recommend_lunch(today=None, settings=None, user_request=None,
         chosen = _filter_and_score(
             base_candidates, settings, today, last_visit_map, count_map,
             meal_budget, budget_mode, hint, relax_level, unavailable_ids,
-            party_size,
+            party_size, sat_map,
         )
         if len(chosen) >= top_n:
             break
@@ -239,7 +246,7 @@ def recommend_lunch(today=None, settings=None, user_request=None,
 
 def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
                       meal_budget, budget_mode, hint, relax_level, unavailable_ids,
-                      party_size=1):
+                      party_size=1, sat_map=None):
     """완화 단계에 따라 소프트 필터를 적용하고 점수를 매긴 후보 리스트를 반환한다."""
     exclude_recent = settings.get("exclude_recent_days", 5)
     exclude_category = settings.get("exclude_category_days", 2)
@@ -284,7 +291,7 @@ def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
 
         scored_result = _score_restaurant(
             r, settings, today, last_visit_map, count_map,
-            meal_budget, budget_mode, hint, relax_level,
+            meal_budget, budget_mode, hint, relax_level, sat_map,
         )
         if scored_result is None:
             continue
@@ -301,6 +308,7 @@ def _filter_and_score(candidates, settings, today, last_visit_map, count_map,
             "can_group": r.get("can_group"), "max_party": r.get("max_party"),
             "can_takeout": r.get("can_takeout"),
             "last_visited": last_date, "visit_count": count_map.get(r["id"], 0),
+            "avg_satisfaction": (sat_map or {}).get(r["id"]),
             "score": score, "reasons": reasons, "breakdown": breakdown,
             "ai_comment": None,
         })

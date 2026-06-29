@@ -140,51 +140,55 @@ h3 {{ font-size: 1.05rem !important; font-weight: 700 !important; color:{INK}; }
 
 /* 기본 컨테이너 카드 */
 [data-testid="stVerticalBlockBorderWrapper"] {{ border-radius:16px !important;
-    border-color:#ECEFF3 !important; box-shadow:0 1px 3px rgba(16,24,40,0.04); }}
+    border-color:#ECEFF3 !important; box-shadow:0 1px 3px rgba(16,24,40,0.04);
+    overflow:hidden; }}
 [data-testid="stSidebar"] {{ background:#FFFFFF; border-right:1px solid #EEF1F4; }}
 [data-testid="stProgress"] > div > div > div {{ background-color:{GREEN}; }}
 [data-testid="stTextInput"] input, textarea {{ border-radius:10px !important; }}
 
 /* ================= 추천 카드 ================= */
-.mml-card {{ position:relative; background:#fff; border:1px solid #ECEFF3;
-    border-left:5px solid #9AA3AF; border-radius:16px; padding:15px 17px 6px;
-    box-shadow:0 1px 3px rgba(16,24,40,0.05); }}
-.mml-card.r1 {{ border-left-color:{GREEN}; background:linear-gradient(180deg,#F4FAF7 0%, #fff 55%);
-    border-color:#DCEDE5; box-shadow:0 4px 16px rgba(31,111,84,0.10); }}
-.mml-card.r2 {{ border-left-color:{ORANGE}; }}
-.mml-card.r3 {{ border-left-color:#9AA3AF; }}
+/* 카드 컨테이너 자체는 st.container(border=True). 아래는 내부 요소 스타일 */
 
-.mml-ribbon {{ display:inline-block; background:{GREEN}; color:#fff; font-size:0.68rem;
-    font-weight:800; letter-spacing:0.6px; padding:3px 11px; border-radius:999px; margin-bottom:9px; }}
+/* 상단 헤더 띠: 카드 좌우/상단 패딩을 음수 마진으로 상쇄해 가장자리까지 채운다 */
+.mml-head {{ margin:-1rem -1rem 0; padding:0.8rem 1rem 0.7rem;
+    border-bottom:1px solid #EEF1F4; }}
+.mml-head.r1 {{ background:#EEF1F8; border-bottom-color:#DCE3EF; }}
+.mml-head.r2 {{ background:#FDF2EC; border-bottom-color:#F6E2D6; }}
+.mml-head.r3 {{ background:#F5F6F8; border-bottom-color:#ECEEF1; }}
+.mml-headrow {{ display:flex; align-items:center; gap:11px; }}
+.mml-titlewrap {{ flex:1 1 auto; min-width:0; }}
 
-.mml-chead {{ display:flex; align-items:center; gap:11px; }}
+.mml-ribbon {{ display:inline-block; color:#fff; font-size:0.66rem; font-weight:800;
+    letter-spacing:0.5px; padding:3px 10px; border-radius:999px; margin-bottom:8px; background:{GREEN}; }}
+
 .mml-rk {{ flex:0 0 auto; width:30px; height:30px; border-radius:9px; color:#fff;
     font-weight:800; font-size:0.95rem; display:flex; align-items:center; justify-content:center; }}
 .r1 .mml-rk {{ background:{GREEN}; }} .r2 .mml-rk {{ background:{ORANGE}; }} .r3 .mml-rk {{ background:#9AA3AF; }}
-.mml-name {{ font-size:1.16rem; font-weight:800; color:{INK}; line-height:1.2; }}
-.mml-card.r1 .mml-name {{ font-size:1.3rem; }}
-.mml-sub {{ font-size:0.82rem; color:{MUTE}; margin-top:1px; }}
+.mml-name {{ font-size:1.16rem; font-weight:800; color:{INK}; line-height:1.22;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.mml-head.r1 .mml-name {{ font-size:1.3rem; }}
+.mml-sub {{ font-size:0.82rem; color:{MUTE}; margin-top:2px; }}
 
-.mml-match {{ margin-left:auto; text-align:center; border-radius:13px; padding:5px 11px; min-width:62px; }}
+.mml-match {{ flex:0 0 auto; text-align:center; border-radius:13px; padding:5px 11px; min-width:62px; }}
 .mml-match .p {{ font-weight:800; font-size:1.05rem; line-height:1; }}
 .mml-match .l {{ font-size:0.62rem; margin-top:2px; }}
-.mml-match.m-hi  {{ background:#EAF5F0; }} .m-hi  .p {{ color:{GREEN}; }} .m-hi  .l {{ color:#5C8C7B; }}
+.mml-match.m-hi  {{ background:#E9EDF6; }} .m-hi  .p {{ color:{GREEN}; }} .m-hi  .l {{ color:#5b6b8c; }}
 .mml-match.m-mid {{ background:#FDF0E6; }} .m-mid .p {{ color:{ORANGE}; }} .m-mid .l {{ color:#B5763F; }}
 .mml-match.m-lo  {{ background:#F1F3F6; }} .m-lo  .p {{ color:#6B7280; }} .m-lo  .l {{ color:#9AA3AF; }}
 
-.mml-meta {{ display:flex; flex-wrap:wrap; align-items:center; gap:5px 0; margin:11px 0 7px;
+.mml-meta {{ display:flex; flex-wrap:wrap; align-items:center; row-gap:4px; margin:13px 0 9px;
     font-size:0.9rem; color:#374151; }}
 .mml-meta span {{ white-space:nowrap; }}
 .mml-meta .sep {{ color:#D3D8E0; margin:0 9px; }}
 .mml-meta b {{ font-weight:700; color:{INK}; }}
 .mml-bdot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:1px; }}
 
-.mml-why {{ font-size:0.9rem; color:#33404F; background:#F7F9FB; border:1px solid #EEF2F6;
-    border-radius:11px; padding:8px 12px; margin:2px 0 8px; }}
-.mml-card.r1 .mml-why {{ background:#EEF7F2; border-color:#DCEDE5; }}
+.mml-why {{ font-size:0.9rem; line-height:1.45; color:#33404F; background:#F7F9FB;
+    border:1px solid #EEF2F6; border-radius:11px; padding:9px 13px; margin:0 0 9px; }}
+.mml-head.r1 ~ .mml-why, .mml-why {{ }}
 .mml-why b {{ color:{GREEN_DARK}; font-weight:700; }}
 
-.mml-sublog {{ font-size:0.78rem; color:#9AA3AF; margin:0 0 8px; }}
+.mml-sublog {{ font-size:0.78rem; color:#9AA3AF; margin:0 0 12px; }}
 </style>
 """,
         unsafe_allow_html=True,

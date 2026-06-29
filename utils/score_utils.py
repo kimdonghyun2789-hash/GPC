@@ -83,6 +83,20 @@ def recency_score(last_visited_days, exclude_recent_days) -> float:
     return round(min(1.0, last_visited_days / (base * 2)) * 10.0, 2)
 
 
+def satisfaction_score(avg_satisfaction) -> float:
+    """
+    내가 남긴 평균 만족도(1~5)를 점수로 환산한다.
+    3점을 기준으로 ±, 기록이 없으면 0(중립).
+    """
+    if avg_satisfaction is None:
+        return 0.0
+    try:
+        s = float(avg_satisfaction)
+    except (TypeError, ValueError):
+        return 0.0
+    return round((s - 3.0) * 5.0, 2)  # 5점→+10, 1점→-10
+
+
 def visit_count_score(visit_count) -> float:
     """
     누적 방문 횟수가 적을수록 가점(같은 곳만 가는 것을 방지).

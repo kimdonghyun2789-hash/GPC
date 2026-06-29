@@ -85,6 +85,17 @@ def get_monthly_budget_status(year_month: str = None) -> dict:
     remaining = monthly_budget - spent
     usage_rate = round((spent / monthly_budget) * 100, 1) if monthly_budget > 0 else 0.0
 
+    # 현재 달이면 지출 속도로 월말 예상 지출을 추정한다(비-AI).
+    remaining_workdays = date_utils.remaining_workdays()
+    is_current = year_month == date_utils.year_month()
+    projected = spent
+    if is_current:
+        elapsed = date_utils.workdays_elapsed()
+        total_workdays = elapsed + remaining_workdays - 1  # 오늘 중복 보정
+        if elapsed > 0 and total_workdays > 0:
+            projected = int(round(spent / elapsed * total_workdays))
+    projected_diff = monthly_budget - projected  # 음수면 초과 예상
+
     return {
         "year_month": year_month,
         "monthly_budget": monthly_budget,
@@ -95,5 +106,8 @@ def get_monthly_budget_status(year_month: str = None) -> dict:
         "avg_price": avg_price,
         "visit_count": cnt,
         "is_over": spent > monthly_budget,
-        "remaining_workdays": date_utils.remaining_workdays(),
+        "remaining_workdays": remaining_workdays,
+        "projected": projected,
+        "projected_diff": projected_diff,
+        "is_current_month": is_current,
     }

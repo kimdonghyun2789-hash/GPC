@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 from utils import date_utils
 
@@ -401,6 +401,37 @@ def visit_count_map() -> dict[int, int]:
     ).fetchall()
     conn.close()
     return {r["restaurant_id"]: r["cnt"] for r in rows}
+
+
+def avg_satisfaction_map() -> dict[int, float]:
+    """식당별 평균 만족도 매핑(내가 남긴 만족도 기반, 추천 점수에 반영)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT restaurant_id, AVG(satisfaction) AS s FROM visit_logs "
+        "WHERE satisfaction IS NOT NULL GROUP BY restaurant_id"
+    ).fetchall()
+    conn.close()
+    return {r["restaurant_id"]: r["s"] for r in rows if r["s"] is not None}
+
+
+def set_blacklist(restaurant_id: int, days: int = 30) -> None:
+    """식당을 일정 기간 추천에서 제외(블랙리스트)한다. days<=0이면 해제."""
+    conn = get_connection()
+    if days and days > 0:
+        until = (date_utils.today() + timedelta(days=days)).isoformat()
+        conn.execute(
+            "UPDATE restaurants SET is_blacklisted = 1, blacklist_until = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (until, restaurant_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE restaurants SET is_blacklisted = 0, blacklist_until = NULL, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (restaurant_id,),
+        )
+    conn.commit()
+    conn.close()
 
 
 # ------------------------------------------------------------------
